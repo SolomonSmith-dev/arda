@@ -1,0 +1,48 @@
+# Secrets
+.env
+.env.local
+*.key
+*.pem
+
+# Archived sub-repo histories (preserved on disk, not tracked)
+**/.git.bak/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project-specific
+data/
+volumes/
+milvus_data/
+redis_data/
+
+# Stray dir from tool that did not expand ~ (safe to delete manually)
+/~/

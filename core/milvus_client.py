@@ -1,0 +1,80 @@
+from __future__ import annotations
+
+from functools import lru_cache
+from typing import Any
+
+import structlog
+
+from core.config import settings
+
+log = structlog.get_logger(__name__)
+
+
+@lru_cache(maxsize=1)
+def get_milvus_client() -> Any | None:
+    """Return a pymilvus MilvusClient or None if Milvus is unreachable.
+
+    Callers should check for None and fall back to an in-memory store.
+    """
+    try:
+        from pymilvus import MilvusClient
+    except ImportError:
+        log.warning("pymilvus_not_installed")
+        return None
+
+    uri = f"http://{settings.milvus_host}:{settings.milvus_port}"
+    try:
+        client = MilvusClient(uri=uri)
+        client.list_collections()
+        return client
+    except Exception as e:
+        log.warning("milvus_unreachable", uri=uri, error=str(e))
+        return None
+
+
+def ensure_collection(client: Any, name: str, dim: int) -> bool:
+    if client is None:
+        return False
+    if client.has_collection(name):
+        return True
+    client.create_collection(collection_name=name, dimension=dim, auto_id=False)
+    return True
+
+
+def insert_embeddings(
+    client: Any,
+    collection: str,
+    ids: list[str],
+    vectors: list[list[float]],
+    metadata: list[dict] | None = None,
+) -> int:
+    if client is None:
+        return 0
+    rows = []
+    for i, (rid, vec) in enumerate(zip(ids, vectors, strict=True)):
+        row = {"id": rid, "vector": vec}
+        if metadata and i < len(metadata):
+            row.update(metadata[i])
+        rows.append(row)
+    result = client.insert(collection_name=collection, data=rows)
+    return int(result.get("insert_count", 0))
+
+
+def search(
+    client: Any,
+    collection: str,
+    query_vector: list[float],
+    top_k: int = 5,
+    output_fields: list[str] | None = None,
+) -> list[dict]:
+    if client is None:
+        return []
+    results = client.search(
+        collection_name=collection,
+        data=[query_vector],
+        limit=top_k,
+        output_fields=output_fields or ["*"],
+    )
+    if not results:
+        return []
+    return list(results[0])
