@@ -48,7 +48,9 @@ core/           Shared foundation -- imported by every agent
   logging.py    structlog setup, trace ID injection
 
 api/            Unified FastAPI server (Phase 3)
-mcp/            FastMCP server (Phase 3)
+mcp_server/     FastMCP server -- arda_execute / arda_query / arda_plan
+                / arda_status. Named with the _server suffix to avoid
+                shadowing the installed mcp package.
 legacy_api/     Verbatim copy of earendil_api.py -- reference only,
                 excluded from the wheel, deleted at Phase 3.
 docs/decisions/ ADRs -- 0001 format, 0002 sub-pass 1, 0003 mock LLM,
