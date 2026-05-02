@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from typing import ClassVar
 
+from agents.base import BaseAgent
 from agents.tombombadil.film_parser import parse_film_note
 from agents.tombombadil.persistent_memory import save_note
 from core.config import settings
 from core.logging import get_logger
+from core.models import AgentResult, AgentTask, TaskStatus
 from core.redis_client import get_redis_sync
 
 log = get_logger("agents.tombombadil.agent")
@@ -95,3 +98,50 @@ def acknowledge_notes(text: str) -> str:
     response = f"OK {data['film']} ({data['rating']}/10) logged"
     log.info("note_saved", film=data["film"], watcher=watcher)
     return response
+
+
+class TomBombadil(BaseAgent):
+    """Discord film club specialist.
+
+    Wraps the existing acknowledge_notes / get_response top-level
+    functions in a BaseAgent surface so Sauron can dispatch to it.
+    Payload routing:
+      - {"message": "Film: ...\\nRating: ..."} -> acknowledge_notes
+      - {"message": "anything else"}            -> get_response
+    """
+
+    tier: ClassVar[str] = "specialist"
+    name: ClassVar[str] = "tombombadil"
+
+    async def run(self, task: AgentTask) -> AgentResult:
+        message = task.payload.get("message")
+        if not message:
+            return AgentResult(
+                task_id=task.task_id,
+                agent=self.name,
+                status=TaskStatus.FAILED,
+                error="payload.message is required",
+            )
+
+        try:
+            lower = message.lower()
+            if "film:" in lower and "rating" in lower:
+                reply = acknowledge_notes(message)
+            else:
+                channel_id = str(task.payload.get("channel_id", "sauron-dispatch"))
+                reply = await get_response(channel_id, message)
+
+            return AgentResult(
+                task_id=task.task_id,
+                agent=self.name,
+                status=TaskStatus.COMPLETED,
+                result={"reply": reply},
+            )
+        except Exception as e:
+            log.error("tombombadil_run_failed", agent_task_id=task.task_id, exception=str(e))
+            return AgentResult(
+                task_id=task.task_id,
+                agent=self.name,
+                status=TaskStatus.FAILED,
+                error=str(e),
+            )

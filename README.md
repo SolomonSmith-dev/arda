@@ -22,9 +22,9 @@ User / Claude Code / MCP Client
 
 | Agent | Role | Tier | Model | Status |
 |---|---|---|---|---|
-| **Sauron** | Orchestrator -- receives NL requests, plans/decomposes, routes to specialists, aggregates results | `orchestrator` | Gemini 2.5 Flash | Pending sub-pass 2 |
+| **Sauron** | Orchestrator -- receives NL requests, plans/decomposes, routes to specialists, aggregates results | `orchestrator` | Gemini 2.5 Flash | Built (sub-pass 2) |
 | **Earendil** | Executor -- runs shell commands and infrastructure ops via a Redis-backed task queue | `executor` | Groq + Llama 4 Scout | Migrated (sub-pass 1) |
-| **Finrod** | Retriever -- RAG over Milvus; ingests docs, embeds, retrieves grounded answers | `retriever` | Groq + Llama 4 Scout (gen) + sentence-transformers (embed) | Pending sub-pass 2 |
+| **Finrod** | Retriever -- RAG over Milvus; ingests docs, embeds, retrieves grounded answers | `retriever` | Groq + Llama 4 Scout (gen) + sentence-transformers (embed) | Built (sub-pass 2) |
 | **Tom Bombadil** | Specialist -- Discord film club bot; parses notes, tracks ratings, recommends films | `specialist` | Groq + Llama 4 Scout | Migrated (sub-pass 1) |
 
 All agents fall back to `agents._mock_llm.MockLLM` when `USE_MOCK_LLM=true`, so the system runs end-to-end with no API keys during development.
@@ -71,7 +71,7 @@ Real API keys (Groq, Gemini, Discord, TMDB) are wired in once `USE_MOCK_LLM=fals
 ## Build Phases
 
 1. **Foundation** -- `core/`, `agents/base.py`, `pyproject.toml`. **Done.**
-2. **Agents** -- migrate Earendil + Tom Bombadil; build Sauron + Finrod. **Sub-pass 1 done; sub-pass 2 in progress.**
+2. **Agents** -- migrate Earendil + Tom Bombadil; build Sauron + Finrod. **Done.**
 3. **Unified API** -- `api/main.py`, routes, X-API-Key middleware.
 4. **Infrastructure** -- Docker Compose (Redis + Milvus + API + worker), tests, ingest pipeline.
 5. **Portfolio polish** -- README expansion, cost model, Mermaid diagram, tag v1.0.0.
