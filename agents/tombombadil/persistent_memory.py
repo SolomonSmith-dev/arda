@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from core.logging import get_logger
@@ -30,13 +30,13 @@ def save_note(redis, film, watcher, rating, reaction="", themes=""):
         film = film.strip()
         watcher = watcher.strip()
 
-        now = datetime.utcnow()
+        now = datetime.now(UTC)
         ts = int(now.timestamp())
-        iso = now.isoformat() + "Z"
+        iso = now.isoformat()
 
         week_start = (now - timedelta(days=now.weekday())).replace(
             hour=0, minute=0, second=0, microsecond=0
-        ).isoformat() + "Z"
+        ).isoformat()
 
         unique_key = f"unique:{_safe_key(film, watcher, week_start)}"
         note_id = str(uuid4())
