@@ -564,3 +564,48 @@ pyproject.toml
 ```
 
 All agents start with `USE_MOCK_LLM=true`. Real API keys (Groq, Gemini) are wired in during Phase 4 once the system is verified end-to-end.
+
+---
+
+## Auxiliary Mac Mini Services
+
+Services that share the Mac Mini host with ARDA but are **not** ARDA agents — they run on schedule, write to local disk, and only touch the agent system if and when they need to send a notification through Tom Bombadil's Signal/Discord channel.
+
+### sb34-watch (CSUSB ALPR Audit longitudinal monitor)
+
+**Source repo:** `~/Projects/csusb-alpr-audit/monitor/` (separate repo, do not vendor into Agents).
+
+**Purpose.** Daily fetch + diff of California Flock Safety transparency portals to produce a longitudinal record of portal presence/absence. Currently 5 portals seeded (CSUSB PD + San Bernardino CA PD + 3 peer CSU campus PDs); easy to expand.
+
+**Architecture (already built):**
+- `fetcher.py` — `curl_cffi` (Chrome impersonation) → `requests` fallback. **Important:** `requests`-only fetches return HTTP 403 from Cloudflare; `curl_cffi` is required for meaningful results.
+- `storage.py` — SQLite (`monitor/data/snapshots.sqlite`) + content-addressed bodies under `monitor/data/bodies/<sha256>.html`.
+- `differ.py` — 5 change states: `first_seen` / `unchanged` / `body_changed` / `became_absent` / `became_present`.
+- `notifier.py` — currently a logging stub. Needs Signal/Discord wiring once the daily cadence is stable.
+- `cli.py` — `python -m sb34_watch --once` entry point.
+
+**Deployment plan on Mac Mini:**
+
+1. **Clone or sync** `~/Projects/csusb-alpr-audit/` to the Mac Mini at the same path. Tailscale-only access; no public exposure.
+2. **Python env.** `pyenv` 3.12.7 + `uv pip install -r monitor/requirements.txt` (deps: `curl-cffi`, `beautifulsoup4`, `lxml`, `requests`, `httpx`, `python-dotenv`, `pytest`).
+3. **Verify.** `cd monitor && PYTHONPATH=src python3 -m pytest -q tests/` — must show 11/11 passing before scheduling.
+4. **launchd plist** at `~/Library/LaunchAgents/com.solomon.sb34-watch.plist`:
+   - Schedule: `StartCalendarInterval` daily at 08:00 PT.
+   - Command: `cd ~/Projects/csusb-alpr-audit/monitor && PYTHONPATH=src /usr/bin/env python3 -m sb34_watch --once`.
+   - `StandardOutPath` and `StandardErrorPath` to `~/Library/Logs/sb34-watch/{out,err}.log`.
+   - `RunAtLoad=false`, `KeepAlive=false`.
+5. **Notification handoff.** Once the daily cadence has 7+ clean days, swap `notifier.py` from logging-stub to a Tom-Bombadil-routed Signal post (or direct signal-cli call). The notifier interface (`notify(DiffResult) -> bool`) is stable, so this is a single-file change.
+6. **Operational dashboard.** Optional: weekly `sqlite3 monitor/data/snapshots.sqlite` query summarizing per-portal change counts, posted to a single Tom Bombadil channel.
+
+**Done when:**
+- launchd loads the plist without errors (`launchctl bootstrap gui/$UID ...`).
+- Daily run produces a new row per portal in `snapshots.sqlite`.
+- A synthetic body change triggers `notifier.notify()` and surfaces in logs (and later, Signal).
+- 14 consecutive days of `NoSuchKey` for CSUSB PD rules out the "transient outage" hypothesis in the audit's S3-portal-absent finding.
+
+**Why this lives here.** The Mac Mini is the only host with a stable Tailscale identity, persistent disk, and the pipe to Tom Bombadil's notification channels. ARDA's Phase 4 Docker stack does not own this — the monitor is a small, scheduled, single-host service and should stay that way until there's a concrete reason to containerize it.
+
+**Out of scope for this scope doc:**
+- The legal / evidentiary work in `~/Projects/csusb-alpr-audit/`. This section covers deployment only.
+- Wayback Machine fallback (deferred until baseline cadence is stable).
+- Any cross-publishing of monitor output to a public dashboard.
