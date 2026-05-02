@@ -45,6 +45,7 @@ dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "pytest-cov>=5.0",
+    "fakeredis>=2.23",
     "ruff>=0.6",
     "mypy>=1.11",
 ]
@@ -61,6 +62,10 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "phase4: deferred to Phase 4 (needs real Redis / Discord / Milvus fixtures)",
+    "integration: requires live external services (Redis, Milvus, Discord, TMDB)",
+]
 
 [tool.ruff]
 line-length = 100
