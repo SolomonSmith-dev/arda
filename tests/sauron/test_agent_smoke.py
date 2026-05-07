@@ -41,7 +41,8 @@ async def test_sauron_dispatches_shell_message_to_earendil_specialist():
     assert result.result["intent"] == "earendil"
     assert result.result["specialist"] == "earendil"
     assert len(earendil.received) == 1
-    assert earendil.received[0].payload == {"message": "uptime"}
+    assert earendil.received[0].payload["message"] == "uptime"
+    assert earendil.received[0].payload["parent_task_id"] == task.task_id
 
 
 @pytest.mark.asyncio

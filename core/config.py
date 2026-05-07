@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Tier = Literal["orchestrator", "executor", "retriever", "specialist"]
-Provider = Literal["google", "groq", "mock"]
+Provider = Literal["anthropic", "google", "groq", "mock"]
 
 
 class Settings(BaseSettings):
@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     arda_api_key: str = "arda-dev-key-2026"
 
     # LLM providers
+    anthropic_api_key: str = ""
     gemini_api_key: str = ""
     groq_api_key: str = ""
 
@@ -28,10 +29,13 @@ class Settings(BaseSettings):
     use_mock_llm: bool = True
 
     # Model overrides per tier
-    orchestrator_model: str = "gemini-2.5-flash"
+    orchestrator_model: str = "claude-opus-4-7"
     executor_model: str = "llama-4-scout-17b-16e-instruct"
     retriever_model: str = "llama-4-scout-17b-16e-instruct"
     specialist_model: str = "llama-4-scout-17b-16e-instruct"
+
+    # Sauron LangGraph checkpointer (SQLite path; relative to cwd)
+    checkpointer_db_path: str = ".arda/checkpoints.sqlite"
 
     # Redis
     redis_host: str = "localhost"
@@ -65,12 +69,13 @@ class Settings(BaseSettings):
     def provider_for_tier(self, tier: Tier) -> Provider:
         if self.use_mock_llm:
             return "mock"
-        return {
-            "orchestrator": "google",
+        mapping: dict[Tier, Provider] = {
+            "orchestrator": "anthropic",
             "executor": "groq",
             "retriever": "groq",
             "specialist": "groq",
-        }[tier]
+        }
+        return mapping[tier]
 
 
 @lru_cache(maxsize=1)

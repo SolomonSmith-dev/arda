@@ -18,9 +18,9 @@ def test_settings_load():
 
 def test_model_router_default():
     s = Settings(use_mock_llm=False)
-    assert "gemini" in s.model_for_tier("orchestrator")
+    assert "claude" in s.model_for_tier("orchestrator")
     assert "llama" in s.model_for_tier("executor")
-    assert s.provider_for_tier("orchestrator") == "google"
+    assert s.provider_for_tier("orchestrator") == "anthropic"
     assert s.provider_for_tier("executor") == "groq"
 
 

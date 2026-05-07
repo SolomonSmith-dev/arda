@@ -21,11 +21,13 @@ dependencies = [
     "pymilvus>=2.4",
 
     # LLM frameworks
+    "anthropic>=0.40",
     "langchain>=0.3",
     "langchain-core>=0.3",
     "langchain-google-genai>=2.0",
     "langchain-groq>=0.2",
     "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=2.0",
 
     # Embeddings (local, free)
     "sentence-transformers>=3.0",
