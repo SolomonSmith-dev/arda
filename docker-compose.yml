@@ -1,0 +1,57 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build: .
+    image: arda:0.3.0
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.earendil.worker"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  # tombombadil:
+  #   image: arda:0.3.0
+  #   command: ["python", "-m", "agents.tombombadil.bot"]
+  #   env_file: .env
+  #   environment:
+  #     REDIS_HOST: redis
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
+  # Real Milvus (etcd + minio + standalone) deferred to v0.4 per plan.
+  # Finrod uses the in-memory store fallback when MILVUS_HOST is unreachable.
