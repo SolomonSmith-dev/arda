@@ -27,11 +27,17 @@ class Settings(BaseSettings):
     # Dev mode -- mock all LLM calls
     use_mock_llm: bool = True
 
+    # Mock embedder (skips torch + sentence-transformers download).
+    # Defaults to mirroring use_mock_llm so dev stays zero-cost; set
+    # USE_MOCK_EMBEDDER=true explicitly on weak hosts to keep real
+    # Groq/Gemini LLM calls while avoiding the ~1GB torch footprint.
+    use_mock_embedder: bool | None = None
+
     # Model overrides per tier
     orchestrator_model: str = "gemini-2.5-flash"
-    executor_model: str = "llama-4-scout-17b-16e-instruct"
-    retriever_model: str = "llama-4-scout-17b-16e-instruct"
-    specialist_model: str = "llama-4-scout-17b-16e-instruct"
+    executor_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    retriever_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    specialist_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     # Redis
     redis_host: str = "localhost"
@@ -53,6 +59,12 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_format: Literal["json", "console"] = "json"
+
+    @property
+    def mock_embedder_enabled(self) -> bool:
+        if self.use_mock_embedder is None:
+            return self.use_mock_llm
+        return self.use_mock_embedder
 
     def model_for_tier(self, tier: Tier) -> str:
         return {

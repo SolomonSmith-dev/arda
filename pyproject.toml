@@ -18,7 +18,6 @@ dependencies = [
 
     # Infra clients
     "redis[hiredis]>=5.0",
-    "pymilvus>=2.4",
 
     # LLM frameworks
     "langchain>=0.3",
@@ -26,9 +25,6 @@ dependencies = [
     "langchain-google-genai>=2.0",
     "langchain-groq>=0.2",
     "langgraph>=0.2",
-
-    # Embeddings (local, free)
-    "sentence-transformers>=3.0",
 
     # MCP
     "mcp[cli]>=1.0",
@@ -48,6 +44,14 @@ dev = [
     "fakeredis>=2.23",
     "ruff>=0.6",
     "mypy>=1.11",
+]
+
+# Real semantic embeddings + Milvus vector store. Skipped in the slim
+# default install (Finrod uses MockEmbedder + InMemoryStore). Add `[full]`
+# when you want sentence-transformers (~1GB torch) and pymilvus.
+full = [
+    "sentence-transformers>=3.0",
+    "pymilvus>=2.4",
 ]
 
 [build-system]
