@@ -8,13 +8,29 @@ from agents.sauron.planner import classify, plan
 @pytest.mark.parametrize(
     "message,expected",
     [
+        # --- earendil: existing ---
         ("uptime", "earendil"),
         ("show me system status", "earendil"),
         ("whoami", "earendil"),
         ("run echo hello", "earendil"),
+        # --- earendil: new regex coverage ---
+        ("docker ps", "earendil"),
+        ("restart nginx", "earendil"),
+        ("git status", "earendil"),
+        ("how many ports are listening", "earendil"),
+        ("ssh into home-server", "earendil"),
+        ("apt-get install curl", "earendil"),
+        ("check cpu usage", "earendil"),
+        ("how much memory is available", "earendil"),
+        ("deploy the service", "earendil"),
+        # --- finrod: existing ---
         ("what is the deployment process", "finrod"),
         ("explain the redis architecture", "finrod"),
         ("summarize the architecture docs", "finrod"),
+        # --- finrod: knowledge beats ops for ambiguous terms ---
+        ("what are the running services", "finrod"),
+        ("remember this for later", "finrod"),
+        # --- tommodbadil ---
         ("Film: Ran\nRating: 9", "tombombadil"),
         ("recommend a movie for me", "tombombadil"),
         ("what did I watch last week", "tombombadil"),

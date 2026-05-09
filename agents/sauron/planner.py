@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal
 
@@ -18,23 +19,17 @@ class Plan:
     subtasks: list[Subtask]
 
 
-_SHELL_KEYWORDS = (
-    "uptime",
-    "df ",
-    "free ",
-    "whoami",
-    "pwd",
-    "ls ",
-    "echo ",
-    "system status",
-    "disk",
-    "memory",
-    "process",
-    "kill ",
-    "run ",
-    "execute ",
-    "shell",
-    "command",
+# Ported from morgoth/src/classifier.js (legacy routing layer).
+# A Gemini-based intent classifier replaces this in a future phase.
+_OPS_PATTERNS: tuple[re.Pattern, ...] = (
+    re.compile(r"\b(disk|df|du|storage|file|folder|director|ls|rm|cp|mv|chmod|chown)\b", re.IGNORECASE),
+    re.compile(r"\b(ps|kill|restart|start|stop|pid|running|service|systemctl|pm2)\b", re.IGNORECASE),
+    re.compile(r"\b(port|netstat|ss|ufw|firewall|iptables|listening)\b", re.IGNORECASE),
+    re.compile(r"\b(git|commit|push|pull|branch|merge|clone|repo)\b", re.IGNORECASE),
+    re.compile(r"\b(docker|container|image|compose|dockerfile)\b", re.IGNORECASE),
+    re.compile(r"\b(memory|ram|cpu|load|uptime|top|htop)\b", re.IGNORECASE),
+    re.compile(r"\b(ssh|install|apt|npm|pip|update|upgrade|journal)\b", re.IGNORECASE),
+    re.compile(r"\b(run|execute|check|monitor|scan|backup|deploy|configure)\b.{0,50}\b(server|service|system|command|script)\b", re.IGNORECASE),
 )
 
 _KNOWLEDGE_KEYWORDS = (
@@ -45,13 +40,10 @@ _KNOWLEDGE_KEYWORDS = (
     "tell me about",
     "describe",
     "search",
-    "find ",
-    "lookup",
     "look up",
     "according to",
     "documentation",
     "docs",
-    "memory",
     "remember",
     "recall",
 )
@@ -74,25 +66,20 @@ _FILM_KEYWORDS = (
 
 
 def classify(message: str) -> Specialist:
-    """Keyword router. Sub-pass 2.5 swaps this for an LLM intent classifier."""
+    """Regex-based intent router. Priority: film > knowledge > ops > earendil default."""
     msg = message.lower().strip()
 
     if any(k in msg for k in _FILM_KEYWORDS):
         return "tombombadil"
     if any(k in msg for k in _KNOWLEDGE_KEYWORDS):
         return "finrod"
-    if any(k in msg for k in _SHELL_KEYWORDS):
+    if any(p.search(message) for p in _OPS_PATTERNS):
         return "earendil"
     return "earendil"
 
 
 def plan(message: str) -> Plan:
-    """Single-step plan: classify and forward the raw message to one specialist.
-
-    Multi-step decomposition (chain-of-thought across specialists) is a
-    future enhancement -- for sub-pass 2 we forward the full message to
-    one specialist and aggregate its single result.
-    """
+    """Single-step plan: classify and forward the raw message to one specialist."""
     specialist = classify(message)
     return Plan(
         intent=specialist,
