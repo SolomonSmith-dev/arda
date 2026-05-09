@@ -35,9 +35,9 @@ class Settings(BaseSettings):
 
     # Model overrides per tier
     orchestrator_model: str = "gemini-2.5-flash"
-    executor_model: str = "llama-4-scout-17b-16e-instruct"
-    retriever_model: str = "llama-4-scout-17b-16e-instruct"
-    specialist_model: str = "llama-4-scout-17b-16e-instruct"
+    executor_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    retriever_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    specialist_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     # Redis
     redis_host: str = "localhost"
