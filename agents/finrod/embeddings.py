@@ -68,6 +68,6 @@ class SentenceTransformerEmbedder:
 def get_embedder() -> Embedder:
     from core.config import settings
 
-    if settings.use_mock_llm:
+    if settings.mock_embedder_enabled:
         return MockEmbedder()
     return SentenceTransformerEmbedder()

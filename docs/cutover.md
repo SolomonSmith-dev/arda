@@ -20,11 +20,17 @@ from is preserved (see `api/routes/`).
 
 ```bash
 cd /path/to/arda
-docker buildx build --platform linux/arm64 -t arda:0.3.0 . --load
+docker build -t arda:0.3.0 .
 ```
 
-The image is ~1.5GB because `sentence-transformers` pulls torch.
-That's expected and acceptable for a Mac Mini.
+Default install skips `sentence-transformers` + torch (~1GB), so
+Finrod uses the lightweight `MockEmbedder` (hash-based vectors).
+Image lands around ~400MB. To enable real semantic embeddings on
+a beefier host, edit the `Dockerfile` to use `pip install -e .[full]`
+and unset `USE_MOCK_EMBEDDER`.
+
+The host (`home-server`, Debian 12, x86_64, Core 2 Duo, 7.5GB RAM)
+cannot run torch comfortably; keep the slim build.
 
 ## Cutover
 

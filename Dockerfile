@@ -19,6 +19,9 @@ COPY mcp_server ./mcp_server
 
 RUN pip install --upgrade pip \
  && pip install -e .
+# `[full]` extra adds sentence-transformers + torch (~1GB) for real
+# semantic embeddings. Skipped here so the default image stays slim;
+# Finrod uses MockEmbedder when USE_MOCK_EMBEDDER is unset.
 
 EXPOSE 5000
 

@@ -27,9 +27,6 @@ dependencies = [
     "langchain-groq>=0.2",
     "langgraph>=0.2",
 
-    # Embeddings (local, free)
-    "sentence-transformers>=3.0",
-
     # MCP
     "mcp[cli]>=1.0",
 
@@ -48,6 +45,12 @@ dev = [
     "fakeredis>=2.23",
     "ruff>=0.6",
     "mypy>=1.11",
+]
+
+# Real semantic embeddings via sentence-transformers (pulls torch, ~1GB).
+# Default install uses MockEmbedder; add `[full]` for production retrieval.
+full = [
+    "sentence-transformers>=3.0",
 ]
 
 [build-system]
