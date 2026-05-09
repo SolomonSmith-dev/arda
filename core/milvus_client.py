@@ -15,11 +15,14 @@ def get_milvus_client() -> Any | None:
     """Return a pymilvus MilvusClient or None if Milvus is unreachable.
 
     Callers should check for None and fall back to an in-memory store.
+    Catches every exception class because pymilvus pulls numpy + pandas,
+    which can fail at import time on older CPUs (e.g. NumPy 2.x dropping
+    support for hosts without the X86_V2 baseline).
     """
     try:
         from pymilvus import MilvusClient
-    except ImportError:
-        log.warning("pymilvus_not_installed")
+    except Exception as e:
+        log.warning("pymilvus_unavailable", error=str(e))
         return None
 
     uri = f"http://{settings.milvus_host}:{settings.milvus_port}"
