@@ -45,16 +45,21 @@ services:
         condition: service_started
     restart: unless-stopped
 
-  # tombombadil:
-  #   image: arda:0.3.0
-  #   command: ["python", "-m", "agents.tombombadil.bot"]
-  #   env_file: .env
-  #   environment:
-  #     REDIS_HOST: redis
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   restart: unless-stopped
+  # Tom Bombadil Discord bot. Disabled by `profile: discord` so a plain
+  # `docker compose up -d` doesn't try to start it without a token. To
+  # enable: set DISCORD_TOKEN in .env, then `docker compose --profile
+  # discord up -d` (or `docker compose up -d tombombadil`).
+  tombombadil:
+    profiles: ["discord"]
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.tombombadil.bot"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   # Real Milvus (etcd + minio + standalone) deferred to v0.4 per plan.
   # Finrod uses the in-memory store fallback when MILVUS_HOST is unreachable.
