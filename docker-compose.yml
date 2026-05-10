@@ -45,6 +45,25 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  # Galadriel: cron scheduler. Polls cron:queue every 5s and dispatches
+  # due jobs back to the API at /execute/wait. Gated behind profile `cron`
+  # so the default `docker compose up -d` stack only runs API + earendil
+  # worker. Enable with `docker compose --profile cron up -d`.
+  galadriel:
+    profiles: ["cron"]
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.galadriel.worker"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      INTERNAL_API_URL: http://api:5000
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
   # Tom Bombadil Discord bot. Disabled by `profile: discord` so a plain
   # `docker compose up -d` doesn't try to start it without a token. To
   # enable: set DISCORD_TOKEN in .env, then `docker compose --profile

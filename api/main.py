@@ -9,6 +9,7 @@ from agents.finrod.agent import Finrod
 from agents.sauron.agent import Sauron
 from agents.tombombadil.agent import TomBombadil
 from api.routes import agents as agents_routes
+from api.routes import cron as cron_routes
 from api.routes import health as health_routes
 from api.routes import memory as memory_routes
 from api.routes import query as query_routes
@@ -60,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(agents_routes.router)
     app.include_router(memory_routes.router)
     app.include_router(query_routes.router)
+    app.include_router(cron_routes.router)
     return app
 
 
