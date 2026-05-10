@@ -56,7 +56,7 @@ async def on_message(message):
     )
 
     if bot.user.mentioned_in(message):
-        content = message.content.replace(f"<@{bot.user.id}>", "").strip()
+        content = _resolve_mentions(message)
         scope_key = memory.history_scope_key(message)
         redis_client = get_redis_sync()
 
@@ -73,6 +73,27 @@ async def on_message(message):
         await _offer_pending_draft(message, sent, scope_key, viewer, redis_client)
 
     await bot.process_commands(message)
+
+
+def _resolve_mentions(message) -> str:
+    """Rewrite raw ``<@id>`` tokens to human-readable display names.
+
+    The LLM ignores opaque mention tokens (or worse, addresses the
+    wrong person) when a message references multiple Discord users.
+    Substituting the display name keeps the instruction semantically
+    clear: ``Say hello to <@1176...>`` becomes ``Say hello to Wes Prater``.
+    The bot's own mention is stripped entirely.
+    """
+    content = message.content
+    for mentioned in message.mentions:
+        if mentioned == bot.user:
+            content = content.replace(f"<@{mentioned.id}>", "")
+            content = content.replace(f"<@!{mentioned.id}>", "")
+            continue
+        name = getattr(mentioned, "display_name", None) or str(mentioned)
+        content = content.replace(f"<@{mentioned.id}>", name)
+        content = content.replace(f"<@!{mentioned.id}>", name)
+    return content.strip()
 
 
 def _guard_check(redis_client, viewer, content: str) -> str | None:
