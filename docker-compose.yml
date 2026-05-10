@@ -82,6 +82,12 @@ services:
     env_file: .env
     environment:
       REDIS_HOST: redis
+      LETTERBOXD_EXPORT_DIR: /app/data/letterboxd
+    volumes:
+      # Same Letterboxd mount as the api service. The Discord bot runs
+      # in its own container with its own FilmKnowledge instance, so it
+      # needs its own access to the export.
+      - ./data/letterboxd:/app/data/letterboxd:ro
     depends_on:
       redis:
         condition: service_healthy
