@@ -178,6 +178,45 @@ class FilmKnowledge:
 
         return best
 
+    def get_user_summary(self, name: str, recent_limit: int = 30) -> str | None:
+        """Compact summary for the LLM system prompt: favorites + recent rated.
+
+        Returns None if the user isn't in ``self.people``.
+        """
+        person = self.people.get(name)
+        if not person:
+            return None
+
+        favorites = (
+            [w["name"] for w in []]
+            + [
+                f["title"]
+                for f in self.films
+                if any(
+                    w.get("name") == name and (w.get("rating") or 0) >= 9
+                    for w in f.get("watchers", [])
+                )
+            ]
+        )
+
+        rated_by_user: list[tuple[str, float]] = []
+        for f in self.films:
+            for w in f.get("watchers", []):
+                if w.get("name") == name and w.get("rating") is not None:
+                    rated_by_user.append((f["title"], float(w["rating"])))
+        rated_by_user.sort(key=lambda x: -x[1])
+
+        lines = [f"Viewer: {name} (avg {person.get('avg_rating', 0)})"]
+        if favorites[:8]:
+            lines.append("Top-rated: " + ", ".join(favorites[:8]))
+        if rated_by_user:
+            top = rated_by_user[:recent_limit]
+            lines.append(
+                "Recent ratings: "
+                + ", ".join(f"{t} ({r:g}/10)" for t, r in top)
+            )
+        return "\n".join(lines)
+
     def get_context_summary(self) -> str:
         summaries = []
         for film in self.films:
