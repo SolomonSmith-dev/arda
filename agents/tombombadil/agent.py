@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agents.base import BaseAgent
 from agents.conduct import CONDUCT_PROMPT
-from agents.tombombadil import draft_store, memory
+from agents.tombombadil import draft_store, memory, metrics
 from agents.tombombadil.fact_extractor import ExtractedFacts
 from agents.tombombadil.fact_extractor import extract as extract_facts
 from agents.tombombadil.film_knowledge import FilmKnowledge
@@ -69,8 +69,32 @@ def _identity_block(viewer: Viewer) -> str:
     )
 
 
+def _club_roster_block() -> str | None:
+    """Compact roster of every viewer in ``FILM_DATABASE['people']``.
+
+    Without this, Tom's per-viewer film summary leaves him blind when a
+    user asks about ANOTHER club member ("How did Anthony rate his
+    films?"). The roster gives the LLM enough context to answer those
+    questions from seed data without inventing ratings.
+    """
+    if not _film_knowledge.people:
+        return None
+    lines: list[str] = ["Other recognised club members and their profiles:"]
+    for name, profile in _film_knowledge.people.items():
+        avg = profile.get("avg_rating", 0)
+        watched = ", ".join(profile.get("films_watched") or []) or "none yet"
+        themes = ", ".join(profile.get("preferred_themes") or [])
+        line = f"- {name} (avg {avg}; watched: {watched}"
+        if themes:
+            line += f"; prefers: {themes}"
+        line += ")"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _film_summary_block(viewer: Viewer, prefs: dict[str, str]) -> str | None:
     if _suppress_films(prefs):
+        metrics.PREF_SUPPRESSED.inc()
         return (
             f"{viewer.canonical_name or viewer.discord_name} has asked you NOT "
             "to bring up films unprompted. Only discuss films if they explicitly "
@@ -128,6 +152,10 @@ def _build_system_messages(
         _SELF_DESCRIPTION,
         _identity_block(viewer),
     ]
+    if not _suppress_films(prefs):
+        roster = _club_roster_block()
+        if roster:
+            blocks.append(roster)
     film_block = _film_summary_block(viewer, prefs)
     if film_block:
         blocks.append(film_block)
@@ -141,10 +169,22 @@ def _build_system_messages(
 
 
 def _history_messages(turns: list[memory.Turn]) -> list:
+    """Render persisted turns as LangChain messages.
+
+    Only USER turns get the ``[viewer] ...`` speaker prefix -- the LLM
+    needs that to disambiguate who said what in multi-user channels.
+    ASSISTANT turns must NOT be prefixed: when the model sees its own
+    prior replies wrapped in ``[Solomon Smith] ...`` it imitates that
+    shape on the next response (live regression: bot replied
+    ``[@Solomon Smith] Hello Patrick!``).
+    """
     msgs = []
     for t in turns:
-        prefixed = f"[{t.viewer}] {t.content}" if t.viewer else t.content
-        msgs.append(HumanMessage(content=prefixed) if t.role == "user" else AIMessage(content=prefixed))
+        if t.role == "user":
+            content = f"[{t.viewer}] {t.content}" if t.viewer else t.content
+            msgs.append(HumanMessage(content=content))
+        else:
+            msgs.append(AIMessage(content=t.content))
     return msgs
 
 
@@ -244,7 +284,9 @@ async def _persist_facts(
         # the draft to that message's id.
         draft_store.push_pending(redis_client, scope_key, note)
     for fact in facts.free_facts:
-        await memory.remember_fact(viewer, fact, source_channel=scope_key)
+        ok = await memory.remember_fact(viewer, fact, source_channel=scope_key)
+        if ok:
+            metrics.FACTS_INGESTED.inc()
 
 
 class TomBombadil(BaseAgent):

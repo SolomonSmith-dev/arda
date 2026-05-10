@@ -132,11 +132,30 @@ class MilvusStore:
             return 0
 
     def delete_by_metadata(self, predicate: dict[str, Any]) -> int:
-        # Milvus delete-by-metadata needs proper expr support; left as a
-        # no-op stub until PR 6 stands up Milvus standalone in compose.
-        # Today's deploy uses InMemoryStore unconditionally because
-        # ``get_milvus_client`` returns ``None`` when Milvus is unreachable.
-        return 0
+        """Translate the predicate into a Milvus boolean expression
+        (``k == "v" && ...``) and dispatch through
+        :func:`core.milvus_client.delete_by_expr`. Returns 0 when the
+        predicate is empty (we never delete the whole collection).
+        """
+        from core.milvus_client import delete_by_expr
+
+        if not predicate:
+            return 0
+        clauses: list[str] = []
+        for k, v in predicate.items():
+            if isinstance(v, str):
+                escaped = v.replace('"', '\\"')
+                clauses.append(f'{k} == "{escaped}"')
+            elif isinstance(v, bool):
+                clauses.append(f"{k} == {str(v).lower()}")
+            elif isinstance(v, int | float):
+                clauses.append(f"{k} == {v}")
+            else:
+                continue
+        if not clauses:
+            return 0
+        expr = " && ".join(clauses)
+        return delete_by_expr(self._client, self.collection, expr)
 
 
 def get_store() -> VectorStore:

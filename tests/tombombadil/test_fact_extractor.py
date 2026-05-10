@@ -82,3 +82,22 @@ def test_rating_clamped_to_zero_to_ten():
     facts = extract("I rated The Room 12/10 ironically", "lol", SOLOMON)
     if facts.notes:
         assert 0.0 <= facts.notes[0].rating <= 10.0
+
+
+def test_pronoun_film_reference_is_dropped():
+    """Catch the live regression: 'I just watched Interstellar. I would
+    rate it 1/10.' shouldn't produce a NoteDraft for film='it' since we
+    have no conversation memory to resolve the pronoun.
+    """
+    facts = extract(
+        "I just watched Interstellar. I would rate it 1/10.",
+        "noted",
+        SOLOMON,
+    )
+    pronoun_drafts = [n for n in facts.notes if n.film.lower() in ("it", "this", "that")]
+    assert pronoun_drafts == []
+
+
+def test_pronoun_dropped_singular_form():
+    facts = extract("I'd rate this 7/10", "noted", SOLOMON)
+    assert facts.notes == []

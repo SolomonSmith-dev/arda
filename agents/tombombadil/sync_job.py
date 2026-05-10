@@ -20,7 +20,7 @@ import httpx
 from agents.galadriel.models import Job, JobDelivery, JobPayload, JobSchedule
 from agents.galadriel.scheduler import Schedule, next_run_ms
 from agents.galadriel.store import save_job
-from agents.tombombadil import delivery
+from agents.tombombadil import delivery, metrics
 from agents.tombombadil.letterboxd_rss import DiaryEntry, parse_feed_text
 from agents.tombombadil.persistent_memory import save_note
 from core.logging import get_logger
@@ -167,6 +167,11 @@ def run_sync(
         saved=saved,
         errors=errors,
     )
+    if result.saved:
+        metrics.LETTERBOXD_SYNC.labels(kind="saved_films").inc(result.saved)
+    if result.errors:
+        metrics.LETTERBOXD_SYNC.labels(kind="errors").inc(len(result.errors))
+
     log.info(
         "letterboxd_sync_complete",
         username=username,
