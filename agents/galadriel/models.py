@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 ScheduleKind = Literal["cron", "at"]
 PayloadKind = Literal["agentTurn", "systemEvent"]
-DeliveryMode = Literal["announce", "telegram", "none"]
+DeliveryMode = Literal["announce", "telegram", "discord", "none"]
 
 
 class JobSchedule(BaseModel):

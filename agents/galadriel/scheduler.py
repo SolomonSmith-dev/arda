@@ -8,7 +8,7 @@ Pure logic, no I/O. Two schedule kinds:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -26,7 +26,7 @@ class Schedule:
 
 
 def _now_ms() -> int:
-    return int(datetime.now(timezone.utc).timestamp() * 1000)
+    return int(datetime.now(UTC).timestamp() * 1000)
 
 
 def next_run_ms(schedule: Schedule, now_ms: int | None = None) -> int | None:

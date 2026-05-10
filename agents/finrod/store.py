@@ -25,6 +25,8 @@ class VectorStore(Protocol):
 
     def count(self) -> int: ...
 
+    def delete_by_metadata(self, predicate: dict[str, Any]) -> int: ...
+
 
 def _cosine(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b, strict=True))
@@ -62,6 +64,19 @@ class InMemoryStore:
 
     def count(self) -> int:
         return len(self._items)
+
+    def delete_by_metadata(self, predicate: dict[str, Any]) -> int:
+        """Remove items whose metadata matches every key/value in
+        ``predicate``. Returns the number deleted.
+        """
+        if not predicate:
+            return 0
+        before = len(self._items)
+        self._items = [
+            item for item in self._items
+            if not all(item[3].get(k) == v for k, v in predicate.items())
+        ]
+        return before - len(self._items)
 
 
 class MilvusStore:
@@ -115,6 +130,13 @@ class MilvusStore:
             return int(stats.get("row_count", 0))
         except Exception:
             return 0
+
+    def delete_by_metadata(self, predicate: dict[str, Any]) -> int:
+        # Milvus delete-by-metadata needs proper expr support; left as a
+        # no-op stub until PR 6 stands up Milvus standalone in compose.
+        # Today's deploy uses InMemoryStore unconditionally because
+        # ``get_milvus_client`` returns ``None`` when Milvus is unreachable.
+        return 0
 
 
 def get_store() -> VectorStore:

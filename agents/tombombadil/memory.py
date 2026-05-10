@@ -48,19 +48,22 @@ class Turn:
 
 # ----- scope keys ---------------------------------------------------
 
-def history_scope_key(message) -> str:
-    """Return the Redis key namespace for ``message``'s history.
+def history_scope_key(event) -> str:
+    """Return the Redis key namespace for ``event``'s history.
 
-    DMs use ``tom:hist:dm:{user_id}`` so personal context stays isolated
-    from guild-channel chatter. Everything else uses
+    ``event`` is duck-typed: either a ``discord.Message`` (has
+    ``author``) or a ``discord.Interaction`` (has ``user``). DMs use
+    ``tom:hist:dm:{user_id}`` so personal context stays isolated from
+    guild-channel chatter. Everything else uses
     ``tom:hist:ch:{channel_id}`` (Discord threads share the parent
     channel id; per-thread scoping can land in a later PR).
     """
-    channel = getattr(message, "channel", None)
+    channel = getattr(event, "channel", None)
     is_dm = getattr(channel, "type", None) and str(channel.type).endswith("private")
-    if is_dm:
-        return f"tom:hist:dm:{message.author.id}"
-    channel_id = getattr(channel, "id", None) or getattr(message, "channel_id", "unknown")
+    actor = getattr(event, "author", None) or getattr(event, "user", None)
+    if is_dm and actor is not None:
+        return f"tom:hist:dm:{actor.id}"
+    channel_id = getattr(channel, "id", None) or getattr(event, "channel_id", "unknown")
     return f"tom:hist:ch:{channel_id}"
 
 
@@ -201,6 +204,21 @@ async def remember_fact(
     if not ok:
         log.warning("remember_fact_failed", viewer=viewer.canonical_name, error=result.error)
     return ok
+
+
+def forget_facts(viewer: Viewer) -> int:
+    """Drop every long-term fact attributed to ``viewer``. Returns the
+    number of stored chunks removed. Strangers (no canonical name) have
+    no facts to forget.
+    """
+    if not viewer.canonical_name:
+        return 0
+    finrod = _get_finrod()
+    store = finrod.store
+    delete_fn = getattr(store, "delete_by_metadata", None)
+    if delete_fn is None:
+        return 0
+    return delete_fn({"kind": "tom_fact", "viewer": viewer.canonical_name})
 
 
 async def recall_facts(viewer: Viewer, query: str, top_k: int = 5) -> list[str]:
