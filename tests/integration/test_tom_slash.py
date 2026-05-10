@@ -78,3 +78,45 @@ def test_whoami_stranger(identity_yaml, stranger):
     reply = tom_commands.cmd_whoami(viewer)
     assert "stranger" in reply.lower()
     assert "not yet mapped" in reply.lower()
+
+
+def test_recommend_for_solomon_returns_favorites_fallback(
+    identity_yaml, fake_redis, solomon
+):
+    """Spec 4.2.2: Solomon has watched the entire seed catalog, so the
+    theme-overlap pick is None; the fallback surfaces favorites instead
+    of returning 'I don't have enough data'."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    reply = tom_commands.cmd_recommend(viewer)
+    assert "don't have enough data" not in reply.lower()
+    # Either the rec format or the favorites fallback header.
+    assert reply.startswith("**For Solomon Smith")
+
+
+def test_recommend_for_known_other_returns_string(identity_yaml, fake_redis, solomon):
+    """Spec 4.2.2: /recommend for_name:<known> succeeds (rec or fallback)."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    reply = tom_commands.cmd_recommend(viewer, for_name="Brian")
+    assert reply and "I don't know" not in reply
+
+
+def test_recommend_for_unknown_admits_ignorance(identity_yaml, fake_redis, solomon):
+    """Spec 4.2.2 / V5: unknown name returns a refusal, not a hallucinated rec."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    reply = tom_commands.cmd_recommend(viewer, for_name="NobodyAtAll")
+    assert "don't know" in reply.lower()
+
+
+def test_recommend_for_stranger_self_explains(identity_yaml, fake_redis, stranger):
+    """Spec 4.2.2: a stranger asking /recommend with no for_name gets
+    a helpful note about identity mapping."""
+    viewer = resolve_viewer(str(stranger.id), str(stranger))
+    reply = tom_commands.cmd_recommend(viewer)
+    assert "name" in reply.lower()
+
+
+def test_club_stats_includes_seed_films():
+    """Spec 4.2.3: /club stats returns aggregate with Ran/La Haine/Ghost Dog."""
+    reply = tom_commands.cmd_club_stats()
+    assert "Top-rated" in reply
+    assert "Ran" in reply or "La Haine" in reply
