@@ -60,29 +60,55 @@ def _execute(api_client: httpx.Client, message: str) -> str:
     return _extract_reply(body)
 
 
+def _format_output(output: Any, error: str = "") -> str:
+    """Render one task's ``output`` (shell dict, structured dict, or string)."""
+    if isinstance(output, dict):
+        stdout = (output.get("stdout") or "").strip()
+        stderr = (output.get("stderr") or "").strip()
+        if stdout or stderr:
+            if stdout and stderr:
+                return f"{stdout}\n[stderr]\n{stderr}"
+            return stdout or stderr
+        for key in ("reply", "text", "message", "output"):
+            value = output.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return str(output)
+
+    if isinstance(output, str) and output.strip():
+        return output.strip()
+
+    if error:
+        return f"error: {error}"
+
+    return ""
+
+
 def _extract_reply(body: dict[str, Any]) -> str:
     """Pull a human-readable reply out of the /execute/wait response.
 
-    Handles both shapes: legacy shell-style with ``stdout``/``stderr``
-    and Sauron's structured ``result.reply`` / ``result.text``.
+    The canonical shape is ``{"status": ..., "results": [{"output": ...}]}``
+    for both shell and sync (Sauron) paths. We concatenate per-task
+    outputs when a workflow returns multiple commands.
     """
+    results = body.get("results") or []
+    if results:
+        chunks: list[str] = []
+        for r in results:
+            chunk = _format_output(r.get("output"), r.get("error") or "")
+            if chunk:
+                chunks.append(chunk)
+        if chunks:
+            return "\n\n".join(chunks)
+
     if "stdout" in body or "stderr" in body:
-        out = (body.get("stdout") or "").strip()
-        err = (body.get("stderr") or "").strip()
-        if out and err:
-            return f"{out}\n[stderr]\n{err}"
-        return out or err or "(no output)"
+        return _format_output(body, body.get("error") or "")
 
-    result = body.get("result")
-    if isinstance(result, dict):
-        for key in ("reply", "text", "message", "output"):
-            value = result.get(key)
-            if isinstance(value, str) and value.strip():
-                return value
-        return str(result)
-
-    if isinstance(result, str) and result.strip():
-        return result
+    if "output" in body or "result" in body:
+        return _format_output(
+            body.get("output") if "output" in body else body.get("result"),
+            body.get("error") or "",
+        )
 
     return body.get("status", "unknown")
 

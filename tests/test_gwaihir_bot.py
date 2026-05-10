@@ -22,25 +22,74 @@ def _api_client_capturing(captured: dict, body: dict) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler), base_url="http://api")
 
 
-def test_extract_reply_prefers_stdout_for_shell_responses():
-    body = {"stdout": "hello\n", "stderr": "", "status": "completed"}
-    assert _extract_reply(body) == "hello"
+def test_extract_reply_pulls_stdout_from_shell_result():
+    body = {
+        "status": "completed",
+        "results": [
+            {
+                "task_id": "t1",
+                "status": "completed",
+                "output": {"stdout": "root\n", "stderr": "", "exit_code": 0},
+                "error": None,
+            }
+        ],
+    }
+    assert _extract_reply(body) == "root"
 
 
 def test_extract_reply_returns_stderr_when_stdout_empty():
-    body = {"stdout": "", "stderr": "boom"}
-    assert _extract_reply(body) == "boom"
+    body = {
+        "status": "completed",
+        "results": [
+            {
+                "task_id": "t1",
+                "status": "completed",
+                "output": {"stdout": "", "stderr": "/bin/sh: 1: foo: not found"},
+                "error": None,
+            }
+        ],
+    }
+    assert "not found" in _extract_reply(body)
 
 
-def test_extract_reply_combines_when_both_present():
-    body = {"stdout": "out", "stderr": "warn"}
+def test_extract_reply_combines_stdout_and_stderr_when_both_present():
+    body = {
+        "status": "completed",
+        "results": [
+            {
+                "output": {"stdout": "out", "stderr": "warn"},
+            }
+        ],
+    }
     out = _extract_reply(body)
     assert "out" in out and "warn" in out
 
 
-def test_extract_reply_pulls_structured_reply():
-    body = {"status": "completed", "result": {"reply": "structured answer"}}
+def test_extract_reply_pulls_structured_reply_from_sauron_path():
+    body = {
+        "status": "completed",
+        "results": [
+            {
+                "task_id": "t1",
+                "status": "completed",
+                "output": {"reply": "structured answer"},
+                "error": None,
+            }
+        ],
+    }
     assert _extract_reply(body) == "structured answer"
+
+
+def test_extract_reply_concatenates_workflow_results():
+    body = {
+        "status": "completed",
+        "results": [
+            {"output": {"stdout": "12:34", "stderr": ""}},
+            {"output": {"stdout": "10G free", "stderr": ""}},
+        ],
+    }
+    out = _extract_reply(body)
+    assert "12:34" in out and "10G free" in out
 
 
 def test_extract_reply_falls_back_to_status_when_empty():
