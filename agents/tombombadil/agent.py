@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 from typing import ClassVar
 
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from agents.base import BaseAgent
+from agents.conduct import CONDUCT_PROMPT
 from agents.tombombadil.film_parser import parse_film_note
 from agents.tombombadil.persistent_memory import save_note
 from core.config import settings
@@ -35,10 +38,11 @@ async def get_response(channel_id: str, text: str) -> str:
 
     log.info("llm_request_start", channel=channel_id, text_length=len(text))
 
+    messages = [SystemMessage(content=CONDUCT_PROMPT), HumanMessage(content=text)]
     try:
         loop = asyncio.get_running_loop()
         response = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: _llm.invoke(text)),
+            loop.run_in_executor(None, lambda: _llm.invoke(messages)),
             timeout=10,
         )
         reply = (response.content or "").strip()

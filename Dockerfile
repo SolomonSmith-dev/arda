@@ -17,6 +17,7 @@ COPY core ./core
 COPY agents ./agents
 COPY api ./api
 COPY mcp_server ./mcp_server
+COPY docs ./docs
 
 RUN pip install --upgrade pip \
  && pip install -e .
