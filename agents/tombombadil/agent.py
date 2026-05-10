@@ -142,10 +142,22 @@ def _build_system_messages(
 
 
 def _history_messages(turns: list[memory.Turn]) -> list:
+    """Render persisted turns as LangChain messages.
+
+    Only USER turns get the ``[viewer] ...`` speaker prefix -- the LLM
+    needs that to disambiguate who said what in multi-user channels.
+    ASSISTANT turns must NOT be prefixed: when the model sees its own
+    prior replies wrapped in ``[Solomon Smith] ...`` it imitates that
+    shape on the next response (live regression: bot replied
+    ``[@Solomon Smith] Hello Patrick!``).
+    """
     msgs = []
     for t in turns:
-        prefixed = f"[{t.viewer}] {t.content}" if t.viewer else t.content
-        msgs.append(HumanMessage(content=prefixed) if t.role == "user" else AIMessage(content=prefixed))
+        if t.role == "user":
+            content = f"[{t.viewer}] {t.content}" if t.viewer else t.content
+            msgs.append(HumanMessage(content=content))
+        else:
+            msgs.append(AIMessage(content=t.content))
     return msgs
 
 
