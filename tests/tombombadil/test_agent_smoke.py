@@ -130,7 +130,7 @@ async def test_history_included_in_second_turn(fake_redis):
 
 
 @pytest.mark.asyncio
-async def test_fact_extractor_runs_after_reply(fake_redis):
+async def test_fact_extractor_persists_prefs_after_reply(fake_redis):
     await tom_agent.get_response(
         "tom:hist:ch:1",
         "stop mentioning films, please",
@@ -141,34 +141,26 @@ async def test_fact_extractor_runs_after_reply(fake_redis):
     assert prefs.get("suppress_films") == "1"
 
 
-def test_acknowledge_notes_parse_error_returns_message():
-    reply = tom_agent.acknowledge_notes("not a valid note", viewer=SOLOMON)
-    assert "Film required" in reply or "Rating required" in reply
+@pytest.mark.asyncio
+async def test_rating_phrase_queues_note_draft_instead_of_saving(fake_redis):
+    """PR 2: NoteDrafts go to the per-scope pending queue, not directly
+    to ``save_note``. Reaction confirmation is required.
+    """
+    from agents.tombombadil import draft_store
 
-
-def test_acknowledge_notes_saves_to_redis(fake_redis):
-    reply = tom_agent.acknowledge_notes(
-        "Name: Solomon\nFilm: Ran\nRating: 9\nReaction: masterpiece",
-        viewer=SOLOMON,
+    await tom_agent.get_response(
+        "tom:hist:ch:42",
+        "I rated Inception 9/10 last night",
+        SOLOMON,
+        fake_redis,
     )
-    assert reply.startswith("OK")
-    assert "Ran" in reply
-    assert fake_redis.sismember("films", "Ran")
-    assert fake_redis.sismember("watchers", "Solomon")
 
+    # save_note hasn't been called — film/watcher sets are empty.
+    assert not fake_redis.sismember("films", "Inception")
 
-def test_acknowledge_notes_dedup(fake_redis):
-    note = "Name: Solomon\nFilm: La Haine\nRating: 10"
-    first = tom_agent.acknowledge_notes(note, viewer=SOLOMON)
-    second = tom_agent.acknowledge_notes(note, viewer=SOLOMON)
-    assert first.startswith("OK")
-    assert "Duplicate" in second
-
-
-def test_acknowledge_notes_backfills_name_from_viewer(fake_redis):
-    reply = tom_agent.acknowledge_notes(
-        "Film: Stalker\nRating: 10",
-        viewer=BRIAN,
-    )
-    assert reply.startswith("OK")
-    assert fake_redis.sismember("watchers", "Brian")
+    # The draft is sitting in the per-scope queue waiting for the bot.
+    pending = draft_store.pop_pending(fake_redis, "tom:hist:ch:42")
+    assert pending is not None
+    assert pending.film.lower().startswith("inception")
+    assert pending.rating == 9.0
+    assert pending.viewer == "Solomon Smith"

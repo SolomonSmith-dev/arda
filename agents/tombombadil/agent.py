@@ -7,14 +7,12 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agents.base import BaseAgent
 from agents.conduct import CONDUCT_PROMPT
-from agents.tombombadil import memory
+from agents.tombombadil import draft_store, memory
 from agents.tombombadil.fact_extractor import ExtractedFacts
 from agents.tombombadil.fact_extractor import extract as extract_facts
 from agents.tombombadil.film_knowledge import FilmKnowledge
-from agents.tombombadil.film_parser import parse_film_note
 from agents.tombombadil.identity import Tier, Viewer, all_known
 from agents.tombombadil.identity import resolve as resolve_viewer
-from agents.tombombadil.persistent_memory import save_note
 from core.config import settings
 from core.logging import get_logger
 from core.models import AgentResult, AgentTask, TaskStatus
@@ -241,55 +239,12 @@ async def _persist_facts(
         except ValueError:
             continue
     for note in facts.notes:
-        save_note(
-            redis_client,
-            film=note.film,
-            watcher=note.viewer,
-            rating=note.rating,
-            reaction="",
-            themes="",
-        )
+        # Drafts are queued for reaction-confirmed save (PR 2 flow).
+        # bot.on_message pops, posts a confirmation message, and binds
+        # the draft to that message's id.
+        draft_store.push_pending(redis_client, scope_key, note)
     for fact in facts.free_facts:
         await memory.remember_fact(viewer, fact, source_channel=scope_key)
-
-
-def acknowledge_notes(text: str, viewer: Viewer | None = None) -> str:
-    log.warning("rigid_film_rating_parser_used", text_preview=text[:80])
-    log.debug("parse_film_notes_start", input_length=len(text))
-
-    result = parse_film_note(text)
-
-    if result["errors"]:
-        log.warning("parse_errors", errors=result["errors"])
-        return "\n".join(result["errors"])
-
-    data = result["data"]
-    fallback = (viewer.canonical_name or viewer.discord_name) if viewer else "Unknown"
-    watcher = data["name"] or fallback
-
-    log.info(
-        "parse_successful",
-        film=data["film"],
-        watcher=watcher,
-        rating=data["rating"],
-    )
-
-    success, msg = save_note(
-        get_redis_sync(),
-        film=data["film"],
-        watcher=watcher,
-        rating=data["rating"],
-        reaction=data.get("reaction") or "",
-        themes=data.get("themes") or "",
-    )
-
-    if not success:
-        log.error("save_failed", reason=msg, film=data["film"])
-        return msg
-
-    response = f"OK {data['film']} ({data['rating']}/10) logged"
-    log.info("note_saved", film=data["film"], watcher=watcher)
-    return response
 
 
 class TomBombadil(BaseAgent):
@@ -319,12 +274,8 @@ class TomBombadil(BaseAgent):
                 str(task.payload.get("viewer_discord_id", "sauron-dispatch")),
                 str(task.payload.get("viewer_discord_name", "sauron-dispatch")),
             )
-            lower = message.lower()
-            if "film:" in lower and "rating" in lower:
-                reply = acknowledge_notes(message, viewer=viewer)
-            else:
-                scope_key = f"tom:hist:ch:{task.payload.get('channel_id', 'sauron-dispatch')}"
-                reply = await get_response(scope_key, message, viewer)
+            scope_key = f"tom:hist:ch:{task.payload.get('channel_id', 'sauron-dispatch')}"
+            reply = await get_response(scope_key, message, viewer)
 
             return AgentResult(
                 task_id=task.task_id,

@@ -88,6 +88,34 @@ lands in PR 6. **Container restarts wipe long-term facts** — Solomon's
 preferences need to be re-asserted after a redeploy. Short-term Redis
 history is unaffected.
 
+## Reaction-confirmed note capture (PR 2)
+
+When a user message contains a loose-form rating ("I just watched
+Inception 8/10"), :mod:`agents.tombombadil.fact_extractor` produces a
+:class:`NoteDraft`. PR 2 changed the persistence flow from
+auto-save-on-extraction to react-to-confirm. Two Redis keys back this:
+
+| Key                              | Type | Lifetime           | Purpose                                                                             |
+|----------------------------------|------|--------------------|-------------------------------------------------------------------------------------|
+| `tom:drafts:scope:{scope_key}`   | LIST | 24h idle TTL       | Hand-off slot between `agent.get_response` and `bot.on_message`. JSON-encoded.      |
+| `tom:draft:{message_id}`         | HASH | 24h after binding  | One pending draft awaiting `✅`/`❌` from the requester on `message_id`.    |
+
+Flow:
+
+1. User: "I rated Inception 9/10 last night"
+2. `agent.get_response` extracts a `NoteDraft` and pushes it to
+   `tom:drafts:scope:{scope_key}` via `draft_store.push_pending`.
+3. `bot.on_message`: after sending Tom's reply, `pop_pending` returns
+   the draft; the bot posts a follow-up "React `✅` to log..." and
+   calls `bind_to_message(message_id=...)`.
+4. `bot.on_reaction_add`: only the original requester can act.
+   `✅` calls `persistent_memory.save_note` and clears the draft.
+   `❌` deletes the draft. Other reactions are ignored.
+
+Unconfirmed drafts expire silently after 24h. The rigid
+`Film:/Rating:` parser path was removed in PR 2; users can no longer
+log notes by typing the template, only by speaking naturally.
+
 ## Wiping state during development
 
 ```bash
