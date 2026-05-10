@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from agents.tombombadil import draft_store, memory
 from agents.tombombadil.agent import get_response
+from agents.tombombadil.commands import register_commands
 from agents.tombombadil.identity import resolve as resolve_viewer
 from agents.tombombadil.persistent_memory import save_note
 from core.config import settings
@@ -23,10 +24,16 @@ intents.message_content = True
 intents.reactions = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
+register_commands(bot)
 
 
 @bot.event
 async def on_ready():
+    try:
+        synced = await bot.tree.sync()
+        log.info("slash_commands_synced", count=len(synced))
+    except Exception as exc:
+        log.warning("slash_commands_sync_failed", exc=str(exc))
     log.info("bot_ready", user=str(bot.user))
 
 
