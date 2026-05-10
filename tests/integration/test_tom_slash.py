@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
+from agents.tombombadil import club
 from agents.tombombadil import commands as tom_commands
+from agents.tombombadil.film_knowledge import FilmKnowledge
 from agents.tombombadil.identity import Tier, Viewer
 from agents.tombombadil.identity import resolve as resolve_viewer
 
@@ -120,3 +124,94 @@ def test_club_stats_includes_seed_films():
     reply = tom_commands.cmd_club_stats()
     assert "Top-rated" in reply
     assert "Ran" in reply or "La Haine" in reply
+
+
+# ---------------------------------------------------------------------------
+# Shared fixture
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def knowledge():
+    return FilmKnowledge()
+
+
+# ---------------------------------------------------------------------------
+# Spec 4.2.4: /club recommend
+# ---------------------------------------------------------------------------
+
+
+def test_club_recommend_empty_names(knowledge):
+    """Spec 4.2.4: empty list returns a 'pass one or more' message."""
+    reply = club.cmd_club_recommend(knowledge, "")
+    assert "one or more" in reply.lower()
+
+
+def test_club_recommend_all_unknown(knowledge):
+    """Spec 4.2.4: all-unknown names returns 'I don't know any of...'."""
+    reply = club.cmd_club_recommend(knowledge, "NobodyA, NobodyB")
+    assert "don't know any" in reply.lower()
+
+
+def test_club_recommend_mixed_known_and_unknown(knowledge):
+    """Spec 4.2.4: at least one known name produces a recommendation
+    string (or the 'everyone's watched' fallback). Never crashes."""
+    reply = club.cmd_club_recommend(knowledge, "Brian, NobodyA")
+    assert isinstance(reply, str) and reply
+    assert "don't know any" not in reply.lower()
+
+
+# ---------------------------------------------------------------------------
+# Spec 4.2.5: /club schedule
+# ---------------------------------------------------------------------------
+
+
+def test_club_schedule_saves_galadriel_job(
+    identity_yaml, fake_redis, knowledge
+):
+    """Spec 4.2.5: /club schedule registers a Galadriel job in Redis."""
+    reply = club.cmd_club_schedule(
+        fake_redis, knowledge,
+        film="Inception",
+        when_iso="2099-01-01T19:00:00",
+        channel_id="42",
+        organizer="Solomon Smith",
+    )
+    assert reply.startswith("Scheduled watch party")
+    # The Galadriel store writes cron:job:<id> keys.
+    keys = [k for k in fake_redis.keys("cron:job:*")]
+    assert any("watch_party_" in k for k in keys)
+
+
+def test_club_schedule_rejects_bad_iso(identity_yaml, fake_redis, knowledge):
+    """Spec 4.2.5: malformed ISO returns a typed error."""
+    reply = club.cmd_club_schedule(
+        fake_redis, knowledge,
+        film="Inception", when_iso="next thursday",
+        channel_id="42", organizer="Solomon Smith",
+    )
+    assert "ISO 8601" in reply
+
+
+def test_club_schedule_rejects_empty_film(identity_yaml, fake_redis, knowledge):
+    """Spec 4.2.5: empty film is refused before saving the job."""
+    reply = club.cmd_club_schedule(
+        fake_redis, knowledge,
+        film="   ", when_iso="2099-01-01T19:00:00",
+        channel_id="42", organizer="Solomon Smith",
+    )
+    assert "Film is required" in reply
+
+
+def test_club_schedule_warns_for_uncatalogued_film(
+    identity_yaml, fake_redis, knowledge
+):
+    """Spec 4.2.5: scheduling a film not in FILM_DATABASE adds a heads-up."""
+    reply = club.cmd_club_schedule(
+        fake_redis, knowledge,
+        film="The Holy Mountain",
+        when_iso="2099-01-01T19:00:00",
+        channel_id="42", organizer="Solomon Smith",
+    )
+    assert "Scheduled" in reply
+    assert "isn't in the catalog" in reply
