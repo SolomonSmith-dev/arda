@@ -89,6 +89,20 @@ def announce(job: Job, result: dict) -> None:
                 exc=str(e),
             )
 
+    if job.delivery.mode == "discord":
+        from agents.tombombadil.delivery import publish
+
+        text = _format_announcement(job, result)
+        try:
+            publish(job.delivery.to, text)
+        except Exception as e:
+            log.error(
+                "discord_delivery_failed",
+                job_id=job.id,
+                to=job.delivery.to,
+                exc=str(e),
+            )
+
 
 def reschedule(redis, job: Job) -> None:
     """Compute next_run_at_ms and either re-queue or retire the job."""

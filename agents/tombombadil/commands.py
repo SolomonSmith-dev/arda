@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from agents.tombombadil import memory
+from agents.tombombadil import club, memory
 from agents.tombombadil.film_knowledge import FilmKnowledge
 from agents.tombombadil.identity import Tier, Viewer
 from agents.tombombadil.persistent_memory import save_note
@@ -174,10 +174,37 @@ def register_commands(bot: commands.Bot) -> None:
         reply = cmd_recommend(viewer, for_name)
         await interaction.response.send_message(reply, ephemeral=False)
 
-    @bot.tree.command(name="club", description="Club stats and aggregates")
-    async def _club(interaction: discord.Interaction):
+    club_group = app_commands.Group(name="club", description="Film club aggregates and scheduling")
+
+    @club_group.command(name="stats", description="Top-rated, most-watched, most-active reviewer")
+    async def _club_stats(interaction: discord.Interaction):
         reply = cmd_club_stats()
         await interaction.response.send_message(reply, ephemeral=False)
+
+    @club_group.command(name="recommend", description="Blend tastes across multiple viewers")
+    @app_commands.describe(names="Comma-separated viewer names (e.g. Solomon Smith, Brian)")
+    async def _club_recommend(interaction: discord.Interaction, names: str):
+        reply = club.cmd_club_recommend(_film_knowledge, names)
+        await interaction.response.send_message(reply, ephemeral=False)
+
+    @club_group.command(name="schedule", description="Schedule a watch party")
+    @app_commands.describe(
+        film="Title of the film",
+        when="ISO 8601 timestamp, e.g. 2026-05-15T19:00:00",
+    )
+    async def _club_schedule(interaction: discord.Interaction, film: str, when: str):
+        viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
+        reply = club.cmd_club_schedule(
+            get_redis_sync(),
+            _film_knowledge,
+            film=film,
+            when_iso=when,
+            channel_id=interaction.channel_id,
+            organizer=viewer.canonical_name or viewer.discord_name,
+        )
+        await interaction.response.send_message(reply, ephemeral=False)
+
+    bot.tree.add_command(club_group)
 
     @bot.tree.command(name="forget", description="Wipe your stored state (short/long/prefs/all)")
     @app_commands.describe(scope="What to wipe: short | long | prefs | all")

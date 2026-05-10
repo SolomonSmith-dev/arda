@@ -5,7 +5,7 @@ import contextlib
 import discord
 from discord.ext import commands
 
-from agents.tombombadil import draft_store, memory
+from agents.tombombadil import delivery, draft_store, memory
 from agents.tombombadil.agent import get_response
 from agents.tombombadil.commands import register_commands
 from agents.tombombadil.identity import resolve as resolve_viewer
@@ -34,6 +34,7 @@ async def on_ready():
         log.info("slash_commands_synced", count=len(synced))
     except Exception as exc:
         log.warning("slash_commands_sync_failed", exc=str(exc))
+    delivery.start_subscriber(bot)
     log.info("bot_ready", user=str(bot.user))
 
 
