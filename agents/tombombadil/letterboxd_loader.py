@@ -93,11 +93,14 @@ def _key(title: str, year: int | None) -> str:
     return f"{title.lower().strip()}|{year or ''}"
 
 
-def load_letterboxd_export(export_dir: Path) -> LetterboxdExport:
+def load_letterboxd_export(
+    export_dir: Path, viewer_name: str | None = None
+) -> LetterboxdExport:
     """Read a Letterboxd export directory and return a :class:`LetterboxdExport`.
 
-    Missing CSVs are tolerated. If ``profile.csv`` is absent the user's
-    name falls back to ``"Letterboxd User"``.
+    Missing CSVs are tolerated. If ``viewer_name`` is provided it overrides
+    whatever ``profile.csv`` says — useful when your Letterboxd handle
+    doesn't match the canonical name used in the seed FILM_DATABASE.
     """
     export_dir = Path(export_dir)
 
@@ -106,9 +109,20 @@ def load_letterboxd_export(export_dir: Path) -> LetterboxdExport:
     profile_rows = _read_csv(export_dir / "profile.csv")
     if profile_rows:
         row = profile_rows[0]
-        name = (row.get("Name") or row.get("Username") or name).strip() or name
+        derived = (
+            (row.get("Name") or "").strip()
+            or " ".join(
+                filter(None, [(row.get("Given Name") or "").strip(),
+                              (row.get("Family Name") or "").strip()])
+            ).strip()
+            or (row.get("Username") or "").strip()
+        )
+        name = derived or name
         fav_raw = row.get("Favorite Films") or ""
         favorites = [f.strip() for f in fav_raw.split(",") if f.strip()]
+
+    if viewer_name:
+        name = viewer_name
 
     entries: dict[str, LetterboxdEntry] = {}
 

@@ -125,7 +125,8 @@ class FilmKnowledge:
             path = Path(letterboxd_dir)
             if path.is_dir():
                 try:
-                    export = load_letterboxd_export(path)
+                    viewer_name = os.environ.get("LETTERBOXD_VIEWER_NAME") or None
+                    export = load_letterboxd_export(path, viewer_name=viewer_name)
                     merged = merge_into_film_database(FILM_DATABASE, export)
                     log.info(
                         "letterboxd_merged",

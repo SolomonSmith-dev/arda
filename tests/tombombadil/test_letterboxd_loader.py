@@ -127,3 +127,49 @@ def test_film_knowledge_reads_env_var(export_dir, monkeypatch):
     fk = FilmKnowledge()
     titles = [f["title"] for f in fk.films]
     assert "Inception" in titles
+
+
+def test_load_export_handles_modern_profile_schema(tmp_path):
+    """Letterboxd's current profile.csv uses Given Name + Family Name,
+    not Name. Make sure we still resolve a sensible viewer name."""
+    (tmp_path / "profile.csv").write_text(
+        "Date Joined,Username,Given Name,Family Name,Email Address,"
+        "Location,Website,Bio,Pronoun,Favorite Films\n"
+        "2022-07-27,SolomonThaChef,Solomon,,,California,,,He / his,\n",
+        encoding="utf-8",
+    )
+    export = load_letterboxd_export(tmp_path)
+    # Given Name with empty Family Name -> just "Solomon"
+    assert export.name == "Solomon"
+
+
+def test_load_export_viewer_name_override_wins(tmp_path):
+    """Explicit override beats whatever profile.csv says — used when
+    the Letterboxd handle doesn't match the canonical seed identity."""
+    (tmp_path / "profile.csv").write_text(
+        "Date Joined,Username,Given Name,Family Name,Email Address,"
+        "Location,Website,Bio,Pronoun,Favorite Films\n"
+        "2022-07-27,SolomonThaChef,Solomon,,,California,,,He / his,\n",
+        encoding="utf-8",
+    )
+    export = load_letterboxd_export(tmp_path, viewer_name="Solomon Smith")
+    assert export.name == "Solomon Smith"
+
+
+def test_film_knowledge_honors_viewer_name_env(tmp_path, monkeypatch):
+    (tmp_path / "profile.csv").write_text(
+        "Date Joined,Username,Given Name,Family Name,Email Address,"
+        "Location,Website,Bio,Pronoun,Favorite Films\n"
+        "2022-07-27,SolomonThaChef,Solomon,,,California,,,He / his,\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "ratings.csv").write_text(
+        "Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-15,Inception,2010,https://lb/inception,4.5\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LETTERBOXD_VIEWER_NAME", "Solomon Smith")
+    fk = FilmKnowledge(letterboxd_dir=tmp_path)
+    inception = next(f for f in fk.films if f["title"] == "Inception")
+    names = [w["name"] for w in inception["watchers"]]
+    assert "Solomon Smith" in names
