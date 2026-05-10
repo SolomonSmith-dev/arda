@@ -1,0 +1,31 @@
+# Discord author -> film-club viewer mapping for Tom Bombadil.
+#
+# Copy this file to identity.yaml (next to it) and fill in real Discord
+# snowflake IDs. The real file is gitignored; only this .example ships.
+#
+# Resolution rules:
+# - `owner.discord_id` -> Tier.SOLOMON (Tom treats this person as the
+#   bot owner; their Letterboxd merge keys here).
+# - Each `regulars[*].discord_id` -> Tier.REGULAR (film-club seeded
+#   entries: Brian, Gavin, Isis, Anthony Taylor, G).
+# - Everyone else falls back to a case-insensitive name match against
+#   FILM_DATABASE['people']; unknown authors become Tier.STRANGER.
+#
+# To find a Discord snowflake: enable Developer Mode in Discord settings,
+# right-click a user, "Copy User ID".
+
+owner:
+  discord_id: "REPLACE_WITH_SOLOMON_DISCORD_ID"
+  canonical_name: "Solomon Smith"
+
+regulars:
+  - discord_id: "REPLACE_WITH_BRIAN_DISCORD_ID"
+    canonical_name: "Brian"
+  - discord_id: "REPLACE_WITH_GAVIN_DISCORD_ID"
+    canonical_name: "Gavin"
+  - discord_id: "REPLACE_WITH_ISIS_DISCORD_ID"
+    canonical_name: "Isis"
+  - discord_id: "REPLACE_WITH_ANTHONY_DISCORD_ID"
+    canonical_name: "Anthony Taylor"
+  - discord_id: "REPLACE_WITH_G_DISCORD_ID"
+    canonical_name: "G"
