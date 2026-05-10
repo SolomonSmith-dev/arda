@@ -37,6 +37,12 @@ dependencies = [
 
     # Cron scheduling (Galadriel)
     "croniter>=2.0",
+
+    # RSS parsing (Tom Bombadil Letterboxd auto-sync)
+    "feedparser>=6.0",
+
+    # YAML config (Tom Bombadil identity map)
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

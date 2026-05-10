@@ -133,6 +133,21 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
     try:
         if job.payload.kind == "agentTurn":
             result = execute_agent_turn(client, job)
+        elif job.payload.kind == "systemEvent" and job.payload.text == "letterboxd_sync":
+            # In-process dispatch: avoids an HTTP round-trip and reuses
+            # the shared Redis client. Imported lazily so a Galadriel
+            # job that doesn't need this branch doesn't pull discord.py.
+            from agents.tombombadil.sync_job import run_sync
+
+            sync_result = run_sync(redis)
+            result = {
+                "status": "ok" if not sync_result.errors else "partial",
+                "fetched": sync_result.fetched,
+                "new": sync_result.new,
+                "saved": sync_result.saved,
+                "errors": sync_result.errors,
+            }
+            log.info("letterboxd_sync_dispatched", job_id=job.id, saved=sync_result.saved)
         else:
             result = {"status": "logged", "text": job.payload.text}
             log.info("system_event", job_id=job.id, text=job.payload.text)
