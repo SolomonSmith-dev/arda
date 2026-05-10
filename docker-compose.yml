@@ -21,6 +21,13 @@ services:
     env_file: .env
     environment:
       REDIS_HOST: redis
+      LETTERBOXD_EXPORT_DIR: /app/data/letterboxd
+    volumes:
+      # Drop your unzipped Letterboxd export into ./data/letterboxd/ on the
+      # host (profile.csv, ratings.csv, reviews.csv, watched.csv). Tom
+      # Bombadil merges it into FILM_DATABASE at process start. Read-only
+      # so the container can't mutate the source CSVs.
+      - ./data/letterboxd:/app/data/letterboxd:ro
     depends_on:
       redis:
         condition: service_healthy

@@ -3,12 +3,26 @@
 Loaded on startup to give context about the group's taste.
 Only officially submitted films count toward stats; casually mentioned
 films live in Redis mentions but not here.
+
+If ``LETTERBOXD_EXPORT_DIR`` points at an unzipped Letterboxd export,
+those rows are merged in at construction. See
+:mod:`agents.tombombadil.letterboxd_loader`.
 """
 
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Any
+
+from agents.tombombadil.letterboxd_loader import (
+    load_letterboxd_export,
+    merge_into_film_database,
+)
+from core.logging import get_logger
+
+log = get_logger("agents.tombombadil.film_knowledge")
 
 FILM_DATABASE = {
     "films": [
@@ -98,10 +112,33 @@ FILM_DATABASE = {
 
 
 class FilmKnowledge:
-    def __init__(self, redis_client=None):
+    def __init__(self, redis_client=None, letterboxd_dir: Path | str | None = None):
         self.redis = redis_client
-        self.films = FILM_DATABASE["films"]
-        self.people = FILM_DATABASE["people"]
+
+        if letterboxd_dir is None:
+            env = os.environ.get("LETTERBOXD_EXPORT_DIR")
+            if env:
+                letterboxd_dir = env
+
+        merged = FILM_DATABASE
+        if letterboxd_dir:
+            path = Path(letterboxd_dir)
+            if path.is_dir():
+                try:
+                    export = load_letterboxd_export(path)
+                    merged = merge_into_film_database(FILM_DATABASE, export)
+                    log.info(
+                        "letterboxd_merged",
+                        films=len(merged["films"]),
+                        people=len(merged["people"]),
+                    )
+                except Exception as e:
+                    log.error("letterboxd_load_failed", path=str(path), exc=str(e))
+            else:
+                log.warning("letterboxd_dir_missing", path=str(path))
+
+        self.films = merged["films"]
+        self.people = merged["people"]
 
         if self.redis:
             self._load_to_redis()
