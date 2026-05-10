@@ -34,7 +34,7 @@ flowchart TD
 
 ## API
 
-All routes require `X-API-Key: <ARDA_API_KEY>` except `/health`. The legacy `EARENDIL_API_KEY` is also accepted so older clients keep working.
+All routes require `X-API-Key: <ARDA_API_KEY>` except `/health`.
 
 | Method | Path | Purpose |
 |---|---|---|

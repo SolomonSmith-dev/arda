@@ -65,16 +65,6 @@ def test_unauthorized_returns_401(client: TestClient):
     assert resp.status_code == 401
 
 
-def test_legacy_key_accepted(client: TestClient):
-    # earendil_api_key is a legacy fallback in the auth middleware
-    resp = client.post(
-        "/plan",
-        json={"message": "uptime"},
-        headers={"x-api-key": "earendil-dev-key-2026"},
-    )
-    assert resp.status_code == 200
-
-
 def test_plan_returns_intent_and_subtasks(client: TestClient):
     resp = client.post("/plan", json={"message": "uptime"}, headers=_auth())
     assert resp.status_code == 200

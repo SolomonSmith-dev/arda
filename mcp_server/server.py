@@ -20,7 +20,7 @@ from core.config import settings
 
 HEADERS = {
     "Content-Type": "application/json",
-    "x-api-key": settings.arda_api_key or settings.earendil_api_key,
+    "x-api-key": settings.arda_api_key,
 }
 
 client = httpx.Client(base_url=settings.earendil_host, headers=HEADERS, timeout=30.0)
