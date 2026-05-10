@@ -6,7 +6,7 @@ import json
 
 from agents.galadriel.models import Job, JobDelivery, JobPayload, JobSchedule
 from agents.galadriel.worker import announce
-from agents.tombombadil import club, delivery
+from agents.tombombadil import club, delivery, sync_job
 
 
 def _job(channel_id: str = "42", film: str = "Inception") -> Job:
@@ -66,3 +66,72 @@ def test_ensure_weekly_club_night_is_idempotent(fake_redis):
     j1 = club.ensure_weekly_club_night(fake_redis, channel_id="42")
     j2 = club.ensure_weekly_club_night(fake_redis, channel_id="42")
     assert j1.id == j2.id == club.WEEKLY_NIGHT_JOB_ID
+
+
+# ---------------------------------------------------------------------------
+# Spec 4.3.2: Letterboxd auto-sync
+# ---------------------------------------------------------------------------
+
+SAMPLE_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:letterboxd="https://letterboxd.com">
+  <channel>
+    <item>
+      <title>Stalker, 1979 - ★★★★★</title>
+      <letterboxd:filmTitle>Stalker</letterboxd:filmTitle>
+      <letterboxd:filmYear>1979</letterboxd:filmYear>
+      <letterboxd:memberRating>5.0</letterboxd:memberRating>
+      <letterboxd:watchedDate>2026-05-09</letterboxd:watchedDate>
+    </item>
+    <item>
+      <title>Solaris, 1972 - ★★★★½</title>
+      <letterboxd:filmTitle>Solaris</letterboxd:filmTitle>
+      <letterboxd:filmYear>1972</letterboxd:filmYear>
+      <letterboxd:memberRating>4.5</letterboxd:memberRating>
+      <letterboxd:watchedDate>2026-05-10</letterboxd:watchedDate>
+    </item>
+  </channel>
+</rss>"""
+
+
+def test_sync_saves_new_films_and_advances_watermark(fake_redis):
+    """Spec 4.3.2 sync side effects: new diary entries become notes
+    keyed under viewer_name; watermark advances to latest watchedDate."""
+    result = sync_job.run_sync(
+        fake_redis,
+        username="SolomonThaChef",
+        viewer_name="Solomon Smith",
+        feed_text=SAMPLE_FEED,
+    )
+    assert result.fetched == 2 and result.saved == 2
+    assert fake_redis.sismember("films", "Stalker")
+    assert fake_redis.sismember("films", "Solaris")
+    assert fake_redis.get(sync_job.WATERMARK_KEY) == "2026-05-10"
+
+
+def test_sync_idempotent_on_second_run(fake_redis):
+    """Spec 4.3.2: watermark filters previously-saved entries."""
+    sync_job.run_sync(fake_redis, username="x", viewer_name="Solomon Smith", feed_text=SAMPLE_FEED)
+    second = sync_job.run_sync(fake_redis, username="x", viewer_name="Solomon Smith", feed_text=SAMPLE_FEED)
+    assert second.new == 0 and second.saved == 0
+
+
+def test_sync_announces_when_channel_set(fake_redis):
+    """Spec 4.3.2: TOM_LETTERBOXD_ANNOUNCE_CHANNEL_ID -> delivery
+    payloads enqueued per saved film."""
+    sync_job.run_sync(
+        fake_redis, username="x", viewer_name="Solomon Smith",
+        feed_text=SAMPLE_FEED, announce_channel_id="42",
+    )
+    raw = fake_redis.lrange(delivery.QUEUE_KEY, 0, -1)
+    assert len(raw) == 2
+    texts = [json.loads(p)["text"] for p in raw]
+    assert any("Stalker" in t for t in texts)
+    assert any("Solaris" in t for t in texts)
+
+
+def test_sync_returns_error_without_username(fake_redis):
+    """Spec 4.3.2: no LETTERBOXD_USERNAME -> errored SyncResult,
+    no replies, no watermark change."""
+    result = sync_job.run_sync(fake_redis, username="", feed_text=None)
+    assert result.errors and "LETTERBOXD_USERNAME" in result.errors[0]
+    assert fake_redis.get(sync_job.WATERMARK_KEY) is None
