@@ -83,6 +83,15 @@ _STRONG_OPINION_PATTERNS = (
 _PREF_KEY_SUPPRESS_FILMS = "suppress_films"
 _MAX_FACT_LEN = 280
 
+# Common pronouns / determiners that the rating regex sometimes
+# captures when the film name is implied by earlier context ("I just
+# watched Interstellar. I'd rate IT 1/10."). The fact extractor has no
+# conversation memory, so we reject these explicitly rather than
+# emit a NoteDraft like (film="it", rating=1.0).
+_PRONOUN_FILMS = frozenset(
+    {"it", "this", "that", "them", "those", "these", "him", "her", "us"}
+)
+
 
 def _trim(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
@@ -117,12 +126,17 @@ def extract(user_text: str, bot_reply: str, viewer: Viewer) -> ExtractedFacts:
     for pattern in _RATING_PATTERNS:
         for match in pattern.finditer(text):
             film = _trim(match.group("film")).strip("\"'")
+            if not film or film.lower() in _PRONOUN_FILMS:
+                # Pronoun reference -- we don't have conversation memory
+                # to resolve which film "it" refers to, so drop rather
+                # than offer a useless draft.
+                continue
             try:
                 rating = float(match.group("rating"))
             except ValueError:
                 continue
             rating = max(0.0, min(10.0, rating))
-            if film and viewer.canonical_name:
+            if viewer.canonical_name:
                 facts.notes.append(
                     NoteDraft(film=film, rating=rating, viewer=viewer.canonical_name, raw=match.group(0))
                 )
