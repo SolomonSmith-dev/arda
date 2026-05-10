@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from agents.tombombadil import club, memory
+from agents.tombombadil import club, memory, metrics
 from agents.tombombadil.film_knowledge import FilmKnowledge
 from agents.tombombadil.identity import Tier, Viewer
 from agents.tombombadil.persistent_memory import save_note
@@ -163,6 +163,7 @@ def register_commands(bot: commands.Bot) -> None:
     @bot.tree.command(name="rate", description="Log a film rating to the club store")
     @app_commands.describe(film="Film title", rating="Rating 0-10 (decimals OK)")
     async def _rate(interaction: discord.Interaction, film: str, rating: float):
+        metrics.SLASH_COMMANDS.labels(name="rate").inc()
         viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
         reply = cmd_rate(get_redis_sync(), viewer, film, rating)
         await interaction.response.send_message(reply, ephemeral=False)
@@ -170,6 +171,7 @@ def register_commands(bot: commands.Bot) -> None:
     @bot.tree.command(name="recommend", description="Get a film recommendation")
     @app_commands.describe(for_name="Recommend for someone else (optional)")
     async def _recommend(interaction: discord.Interaction, for_name: str | None = None):
+        metrics.SLASH_COMMANDS.labels(name="recommend").inc()
         viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
         reply = cmd_recommend(viewer, for_name)
         await interaction.response.send_message(reply, ephemeral=False)
@@ -178,12 +180,14 @@ def register_commands(bot: commands.Bot) -> None:
 
     @club_group.command(name="stats", description="Top-rated, most-watched, most-active reviewer")
     async def _club_stats(interaction: discord.Interaction):
+        metrics.SLASH_COMMANDS.labels(name="club_stats").inc()
         reply = cmd_club_stats()
         await interaction.response.send_message(reply, ephemeral=False)
 
     @club_group.command(name="recommend", description="Blend tastes across multiple viewers")
     @app_commands.describe(names="Comma-separated viewer names (e.g. Solomon Smith, Brian)")
     async def _club_recommend(interaction: discord.Interaction, names: str):
+        metrics.SLASH_COMMANDS.labels(name="club_recommend").inc()
         reply = club.cmd_club_recommend(_film_knowledge, names)
         await interaction.response.send_message(reply, ephemeral=False)
 
@@ -193,6 +197,7 @@ def register_commands(bot: commands.Bot) -> None:
         when="ISO 8601 timestamp, e.g. 2026-05-15T19:00:00",
     )
     async def _club_schedule(interaction: discord.Interaction, film: str, when: str):
+        metrics.SLASH_COMMANDS.labels(name="club_schedule").inc()
         viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
         reply = club.cmd_club_schedule(
             get_redis_sync(),
@@ -209,6 +214,7 @@ def register_commands(bot: commands.Bot) -> None:
     @bot.tree.command(name="forget", description="Wipe your stored state (short/long/prefs/all)")
     @app_commands.describe(scope="What to wipe: short | long | prefs | all")
     async def _forget(interaction: discord.Interaction, scope: str):
+        metrics.SLASH_COMMANDS.labels(name="forget").inc()
         viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
         scope_key = memory_mod.history_scope_key(interaction)
         reply = cmd_forget(get_redis_sync(), viewer, scope_key, scope)
@@ -216,6 +222,7 @@ def register_commands(bot: commands.Bot) -> None:
 
     @bot.tree.command(name="whoami", description="Show how Tom sees you")
     async def _whoami(interaction: discord.Interaction):
+        metrics.SLASH_COMMANDS.labels(name="whoami").inc()
         viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
         await interaction.response.send_message(cmd_whoami(viewer), ephemeral=True)
 

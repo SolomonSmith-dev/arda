@@ -81,3 +81,20 @@ def search(
     if not results:
         return []
     return list(results[0])
+
+
+def delete_by_expr(client: Any, collection: str, expr: str) -> int:
+    """Delete rows from ``collection`` matching the Milvus boolean
+    expression ``expr`` (e.g. ``viewer == "Solomon Smith" && kind == "tom_fact"``).
+
+    Returns the number of rows removed. Logs and returns 0 on error so
+    callers stay non-fatal -- ``/forget`` tolerates a partial sweep.
+    """
+    if client is None or not expr:
+        return 0
+    try:
+        result = client.delete(collection_name=collection, filter=expr)
+        return int(result.get("delete_count", 0))
+    except Exception as e:
+        log.warning("milvus_delete_failed", collection=collection, expr=expr, error=str(e))
+        return 0

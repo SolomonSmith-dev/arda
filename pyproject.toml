@@ -24,6 +24,7 @@ dependencies = [
     "langchain-core>=0.3",
     "langchain-google-genai>=2.0",
     "langchain-groq>=0.2",
+    "langchain-anthropic>=0.3",
     "langgraph>=0.2",
 
     # MCP
@@ -43,6 +44,9 @@ dependencies = [
 
     # YAML config (Tom Bombadil identity map)
     "pyyaml>=6.0",
+
+    # Prometheus counters (Tom Bombadil PR 6 metrics).
+    "prometheus-client>=0.20",
 ]
 
 [project.optional-dependencies]

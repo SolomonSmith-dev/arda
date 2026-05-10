@@ -5,7 +5,7 @@ import contextlib
 import discord
 from discord.ext import commands
 
-from agents.tombombadil import delivery, draft_store, memory
+from agents.tombombadil import delivery, draft_store, guards, memory, metrics
 from agents.tombombadil.agent import get_response
 from agents.tombombadil.commands import register_commands
 from agents.tombombadil.identity import resolve as resolve_viewer
@@ -59,13 +59,44 @@ async def on_message(message):
         content = message.content.replace(f"<@{bot.user.id}>", "").strip()
         scope_key = memory.history_scope_key(message)
         redis_client = get_redis_sync()
+
+        refusal = _guard_check(redis_client, viewer, content)
+        if refusal is not None:
+            await message.reply(refusal)
+            return
+
         reply = await get_response(scope_key, content, viewer, redis_client)
         sent = await message.reply(reply)
+        metrics.REPLIES.labels(tier=viewer.tier.value).inc()
         log.info("mention_response_sent", response_preview=reply[:100])
 
         await _offer_pending_draft(message, sent, scope_key, viewer, redis_client)
 
     await bot.process_commands(message)
+
+
+def _guard_check(redis_client, viewer, content: str) -> str | None:
+    """Layered guards: ban list, prompt length, rate limit. Returns a
+    refusal string when any trip; otherwise ``None`` to proceed.
+    Solomon (owner tier) bypasses the rate limit but not the other two.
+    """
+    if guards.is_banned(redis_client, viewer.discord_id):
+        metrics.GUARDS_TRIPPED.labels(kind="ban").inc()
+        log.info("guard_ban", discord_id=viewer.discord_id)
+        return "I've been asked not to engage with you. Sorry."
+    too_long = guards.check_prompt_length(content)
+    if too_long is not None:
+        metrics.GUARDS_TRIPPED.labels(kind="prompt_too_long").inc()
+        log.info("guard_prompt_too_long", discord_id=viewer.discord_id, length=len(content))
+        return too_long
+    rate_limited = guards.check_and_consume(
+        redis_client, viewer.discord_id, is_owner=viewer.is_owner
+    )
+    if rate_limited is not None:
+        metrics.GUARDS_TRIPPED.labels(kind="rate_limit").inc()
+        log.info("guard_rate_limit", discord_id=viewer.discord_id)
+        return rate_limited
+    return None
 
 
 async def _offer_pending_draft(original, sent, scope_key, viewer, redis_client) -> None:
@@ -91,6 +122,7 @@ async def _offer_pending_draft(original, sent, scope_key, viewer, redis_client) 
             requester_discord_id=viewer.discord_id,
             scope=scope_key,
         )
+        metrics.DRAFTS_OFFERED.inc()
         log.info(
             "draft_offered",
             message_id=confirm_msg.id,
@@ -121,6 +153,7 @@ async def on_reaction_add(reaction, user):
 
     if str(reaction.emoji) == REJECT_EMOJI:
         draft_store.delete_draft(redis_client, message_id)
+        metrics.DRAFTS_SKIPPED.inc()
         log.info("draft_skipped", message_id=message_id, film=draft.get("film"))
         with contextlib.suppress(Exception):
             await reaction.message.reply("Skipped.", mention_author=False, delete_after=10)
@@ -149,6 +182,8 @@ async def on_reaction_add(reaction, user):
     except Exception as exc:
         log.warning("draft_commit_reply_failed", exc=str(exc))
 
+    if success:
+        metrics.DRAFTS_COMMITTED.inc()
     log.info(
         "draft_committed" if success else "draft_commit_failed",
         message_id=message_id,

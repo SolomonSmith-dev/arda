@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from agents.base import BaseAgent
 from agents.conduct import CONDUCT_PROMPT
-from agents.tombombadil import draft_store, memory
+from agents.tombombadil import draft_store, memory, metrics
 from agents.tombombadil.fact_extractor import ExtractedFacts
 from agents.tombombadil.fact_extractor import extract as extract_facts
 from agents.tombombadil.film_knowledge import FilmKnowledge
@@ -71,6 +71,7 @@ def _identity_block(viewer: Viewer) -> str:
 
 def _film_summary_block(viewer: Viewer, prefs: dict[str, str]) -> str | None:
     if _suppress_films(prefs):
+        metrics.PREF_SUPPRESSED.inc()
         return (
             f"{viewer.canonical_name or viewer.discord_name} has asked you NOT "
             "to bring up films unprompted. Only discuss films if they explicitly "
@@ -244,7 +245,9 @@ async def _persist_facts(
         # the draft to that message's id.
         draft_store.push_pending(redis_client, scope_key, note)
     for fact in facts.free_facts:
-        await memory.remember_fact(viewer, fact, source_channel=scope_key)
+        ok = await memory.remember_fact(viewer, fact, source_channel=scope_key)
+        if ok:
+            metrics.FACTS_INGESTED.inc()
 
 
 class TomBombadil(BaseAgent):
