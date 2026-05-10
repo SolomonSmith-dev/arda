@@ -56,6 +56,11 @@ class Settings(BaseSettings):
     earendil_host: str = "http://100.112.3.116:5000"
     earendil_api_key: str = "earendil-dev-key-2026"
 
+    # Galadriel worker calls the API back via this URL. Defaults to the
+    # docker-compose service name; set INTERNAL_API_URL=http://localhost:5000
+    # for local dev outside compose.
+    internal_api_url: str = "http://api:5000"
+
     # Logging
     log_level: str = "INFO"
     log_format: Literal["json", "console"] = "json"
