@@ -95,6 +95,13 @@ def fake_bot_user(monkeypatch):
         def get_channel(_cid):
             return None
 
+        @staticmethod
+        async def process_commands(_msg):
+            # bot.on_message ends with `await bot.process_commands(message)`
+            # for legacy text-command (`!cmd`) routing. Tom doesn't use any
+            # text commands, so a no-op is the correct test double.
+            return
+
     monkeypatch.setattr(tom_bot, "bot", _BotShim())
     return tom
 
