@@ -141,3 +141,140 @@ async def test_mention_resolution_substitutes_display_names(
     assert "Wes Prater" in captured["last_human"]
     assert f"<@{wes.id}>" not in captured["last_human"]
     assert f"<@{fake_bot_user.id}>" not in captured["last_human"]
+
+
+# ---------------------------------------------------------------------------
+# Spec 4.1.2 — Note capture: draft offer + react-to-confirm
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rating_phrase_offers_draft(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """Spec 4.1.2: a natural-language rating produces a follow-up draft
+    message after the primary reply."""
+    msg = await _send_mention(
+        guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
+    )
+    # Two replies: the primary conversational one + the draft prompt.
+    assert len(msg.reply_log) == 2
+    assert "React" in msg.reply_log[1] and "Stalker" in msg.reply_log[1]
+
+
+@pytest.mark.asyncio
+async def test_pronoun_rating_does_not_offer_draft(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """Spec 4.1.2 / pronoun blacklist: 'I rated it 5/10' is dropped."""
+    msg = await _send_mention(
+        guild_channel, solomon, "I rated it 5/10", bot_user=fake_bot_user
+    )
+    assert len(msg.reply_log) == 1  # only the primary reply, no draft
+
+
+@pytest.mark.asyncio
+async def test_stranger_rating_does_not_offer_draft(
+    identity_yaml, fake_redis, fake_bot_user, stranger, guild_channel
+):
+    """Spec 4.1.2: strangers can't produce drafts (no canonical_name)."""
+    msg = await _send_mention(
+        guild_channel, stranger, "I rated Inception 9/10", bot_user=fake_bot_user
+    )
+    assert len(msg.reply_log) == 1
+
+
+async def _react(message_id, channel, user, emoji):
+    """Drive on_reaction_add with a freshly-built FakeReaction."""
+    from tests.integration._doubles import FakeMessage, FakeReaction, FakeUser
+    tom = FakeUser(id=0, name="TomBombadil")
+    target = FakeMessage(id=message_id, content="React ...", author=tom, channel=channel, mentions=[])
+    await tom_bot.on_reaction_add(FakeReaction(emoji=emoji, message=target), user)
+    return target
+
+
+@pytest.mark.asyncio
+async def test_check_reaction_commits_draft(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """Spec 4.1.2: ✅ reaction by the original drafter triggers save_note."""
+    await _send_mention(
+        guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
+    )
+    # The bound draft was created against the second reply's id.
+    msg_ids = [m for m in fake_redis.keys("tom:draft:*")]
+    assert len(msg_ids) == 1
+    bound_id = int(msg_ids[0].split(":")[-1])
+
+    target = await _react(bound_id, guild_channel, solomon, "✅")
+    assert any("logged" in r for r in target.reply_log)
+    assert fake_redis.sismember("films", "Stalker")
+    assert fake_redis.sismember("watchers", "Solomon Smith")
+    # Draft is cleared after commit.
+    assert fake_redis.exists(f"tom:draft:{bound_id}") == 0
+
+
+@pytest.mark.asyncio
+async def test_x_reaction_skips_draft(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """Spec 4.1.2: ❌ reaction discards the draft, no save_note."""
+    await _send_mention(
+        guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
+    )
+    bound_id = int(list(fake_redis.keys("tom:draft:*"))[0].split(":")[-1])
+    target = await _react(bound_id, guild_channel, solomon, "❌")
+    assert any("Skipped" in r for r in target.reply_log)
+    assert not fake_redis.sismember("films", "Stalker")
+
+
+@pytest.mark.asyncio
+async def test_wrong_user_reaction_ignored(
+    identity_yaml, fake_redis, fake_bot_user, solomon, brian, guild_channel
+):
+    """Spec 4.1.2: only the requester can confirm. Brian reacting to
+    Solomon's draft is silently ignored."""
+    await _send_mention(
+        guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
+    )
+    bound_id = int(list(fake_redis.keys("tom:draft:*"))[0].split(":")[-1])
+    target = await _react(bound_id, guild_channel, brian, "✅")
+    # No save, no reply.
+    assert target.reply_log == []
+    assert not fake_redis.sismember("films", "Stalker")
+    # Draft still pending.
+    assert fake_redis.exists(f"tom:draft:{bound_id}") == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_drafts_bind_to_original_drafters(
+    identity_yaml, fake_redis, fake_bot_user, solomon, brian, guild_channel
+):
+    """Spec 4.1.2 / 5.2: when Solomon and Brian draft ratings in the
+    same channel, each draft binds under its own drafter's discord_id.
+
+    Limitation: this test exercises SEQUENTIAL on_message calls because
+    asyncio's cooperative scheduling completes each `await
+    tom_bot.on_message(...)` before the next runs. The true
+    concurrency race (interleaved coroutines pushing and popping in
+    overlapping turns) is NOT demonstrated here and would require a
+    different orchestration. Sub-project C should revisit D2 against
+    the actual code to determine whether the race is reachable in
+    production, and if so, design a test that triggers it.
+    """
+    await _send_mention(
+        guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
+    )
+    await _send_mention(
+        guild_channel, brian, "I rated Ran 9/10", bot_user=fake_bot_user
+    )
+    drafts = sorted(int(k.split(":")[-1]) for k in fake_redis.keys("tom:draft:*"))
+    # Two drafts in flight.
+    assert len(drafts) == 2
+    # Each draft's requester_discord_id matches the drafter's id, not
+    # the other user's.
+    d0 = fake_redis.hgetall(f"tom:draft:{drafts[0]}")
+    d1 = fake_redis.hgetall(f"tom:draft:{drafts[1]}")
+    by_film = {d["film"]: d for d in (d0, d1)}
+    assert by_film["Stalker"]["requester_discord_id"] == str(solomon.id)
+    assert by_film["Ran"]["requester_discord_id"] == str(brian.id)
