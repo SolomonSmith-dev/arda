@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agents.tombombadil import club
+from agents.tombombadil import club, memory
 from agents.tombombadil import commands as tom_commands
 from agents.tombombadil.film_knowledge import FilmKnowledge
 from agents.tombombadil.identity import Tier, Viewer
@@ -215,3 +215,75 @@ def test_club_schedule_warns_for_uncatalogued_film(
     )
     assert "Scheduled" in reply
     assert "isn't in the catalog" in reply
+
+
+# ---------------------------------------------------------------------------
+# Spec 4.2.6: /forget across all scopes
+# ---------------------------------------------------------------------------
+
+
+def test_forget_short_clears_channel_history(identity_yaml, fake_redis, solomon):
+    """Spec 4.2.6 short: clears current channel's history list."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    memory.append_turn(fake_redis, "tom:hist:ch:42", viewer, "user", "hi")
+    reply = tom_commands.cmd_forget(fake_redis, viewer, "tom:hist:ch:42", "short")
+    assert "conversation history" in reply.lower()
+    assert memory.recent_turns(fake_redis, "tom:hist:ch:42") == []
+
+
+def test_forget_prefs_clears_pref_hash(identity_yaml, fake_redis, solomon):
+    """Spec 4.2.6 prefs: deletes tom:pref:<id> HASH."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    memory.set_pref(fake_redis, viewer.discord_id, "suppress_films", "1")
+    reply = tom_commands.cmd_forget(fake_redis, viewer, None, "prefs")
+    assert "preferences" in reply.lower()
+    assert memory.get_prefs(fake_redis, viewer.discord_id) == {}
+
+
+@pytest.mark.asyncio
+async def test_forget_long_clears_viewer_finrod_facts(
+    identity_yaml, fake_redis, finrod_in_memory, solomon
+):
+    """Spec 4.2.6 long: drops viewer's tom_fact rows from Finrod's store."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    await memory.remember_fact(viewer, "user loves Tarkovsky", source_channel="x")
+    assert finrod_in_memory.store.count() > 0
+    reply = tom_commands.cmd_forget(fake_redis, viewer, None, "long")
+    assert "fact" in reply.lower()
+    assert finrod_in_memory.store.count() == 0
+
+
+@pytest.mark.asyncio
+async def test_forget_all_clears_everything(
+    identity_yaml, fake_redis, finrod_in_memory, solomon
+):
+    """Spec 4.2.6 all: short + prefs + long together."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    memory.append_turn(fake_redis, "tom:hist:ch:42", viewer, "user", "hi")
+    memory.set_pref(fake_redis, viewer.discord_id, "suppress_films", "1")
+    await memory.remember_fact(viewer, "fact", source_channel="x")
+    reply = tom_commands.cmd_forget(fake_redis, viewer, "tom:hist:ch:42", "all")
+    assert "Cleared" in reply
+    assert memory.recent_turns(fake_redis, "tom:hist:ch:42") == []
+    assert memory.get_prefs(fake_redis, viewer.discord_id) == {}
+    assert finrod_in_memory.store.count() == 0
+
+
+def test_forget_rejects_unknown_scope(identity_yaml, fake_redis, solomon):
+    """Spec 4.2.6: unknown scope returns a typed error."""
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    reply = tom_commands.cmd_forget(fake_redis, viewer, "tom:hist:ch:42", "everything")
+    assert "Scope must be" in reply
+
+
+@pytest.mark.asyncio
+async def test_forget_long_does_not_touch_other_viewer(
+    identity_yaml, fake_redis, finrod_in_memory, solomon, brian
+):
+    """Spec 4.2.6 long / 5.4 privacy: Solomon's /forget never wipes Brian's facts."""
+    solomon_v = resolve_viewer(str(solomon.id), str(solomon))
+    brian_v = resolve_viewer(str(brian.id), str(brian))
+    await memory.remember_fact(solomon_v, "solomon fact", source_channel="x")
+    await memory.remember_fact(brian_v, "brian fact", source_channel="x")
+    tom_commands.cmd_forget(fake_redis, solomon_v, None, "long")
+    assert finrod_in_memory.store.count() == 1  # Brian's fact survives
