@@ -52,9 +52,15 @@ class Settings(BaseSettings):
     discord_token: str = ""
     tmdb_api_key: str = ""
 
-    # Earendil mac mini
+    # Telegram (Gwaihir bot). Comma-separated allowlist of chat IDs;
+    # any inbound update from a chat not in this list is silently dropped.
+    telegram_bot_token: str = ""
+    telegram_allowed_chat_ids: str = ""
+
+    # Earendil mac mini -- the host that runs the API. Name is historical;
+    # ARDA_API_KEY is the canonical auth secret (same key is used by the
+    # MCP client and server).
     earendil_host: str = "http://100.112.3.116:5000"
-    earendil_api_key: str = "earendil-dev-key-2026"
 
     # Galadriel worker calls the API back via this URL. Defaults to the
     # docker-compose service name; set INTERNAL_API_URL=http://localhost:5000
@@ -64,6 +70,18 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
     log_format: Literal["json", "console"] = "json"
+
+    @property
+    def telegram_chat_allowlist(self) -> frozenset[int]:
+        raw = self.telegram_allowed_chat_ids.strip()
+        if not raw:
+            return frozenset()
+        ids: set[int] = set()
+        for part in raw.split(","):
+            part = part.strip()
+            if part:
+                ids.add(int(part))
+        return frozenset(ids)
 
     @property
     def mock_embedder_enabled(self) -> bool:

@@ -21,6 +21,13 @@ services:
     env_file: .env
     environment:
       REDIS_HOST: redis
+      LETTERBOXD_EXPORT_DIR: /app/data/letterboxd
+    volumes:
+      # Drop your unzipped Letterboxd export into ./data/letterboxd/ on the
+      # host (profile.csv, ratings.csv, reviews.csv, watched.csv). Tom
+      # Bombadil merges it into FILM_DATABASE at process start. Read-only
+      # so the container can't mutate the source CSVs.
+      - ./data/letterboxd:/app/data/letterboxd:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -75,9 +82,37 @@ services:
     env_file: .env
     environment:
       REDIS_HOST: redis
+      LETTERBOXD_EXPORT_DIR: /app/data/letterboxd
+    volumes:
+      # Same Letterboxd mount as the api service. The Discord bot runs
+      # in its own container with its own FilmKnowledge instance, so it
+      # needs its own access to the export.
+      - ./data/letterboxd:/app/data/letterboxd:ro
     depends_on:
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  # Gwaihir: Telegram long-poll bot. Forwards inbound messages to /execute/wait
+  # after gating by TELEGRAM_ALLOWED_CHAT_IDS. Also serves as the outbound
+  # delivery transport for Galadriel jobs with delivery.mode="telegram".
+  # Gated behind profile `telegram` so a default `docker compose up -d` won't
+  # try to start it without a token. To enable: set TELEGRAM_BOT_TOKEN and
+  # TELEGRAM_ALLOWED_CHAT_IDS in .env, then `docker compose --profile
+  # telegram up -d`.
+  gwaihir:
+    profiles: ["telegram"]
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.gwaihir.bot"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      INTERNAL_API_URL: http://api:5000
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
     restart: unless-stopped
 
   # Real Milvus (etcd + minio + standalone) deferred to v0.4 per plan.

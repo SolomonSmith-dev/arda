@@ -7,6 +7,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agents.base import BaseAgent
 from agents.conduct import CONDUCT_PROMPT
+from agents.tombombadil.film_knowledge import FilmKnowledge
 from agents.tombombadil.film_parser import parse_film_note
 from agents.tombombadil.persistent_memory import save_note
 from core.config import settings
@@ -15,6 +16,10 @@ from core.models import AgentResult, AgentTask, TaskStatus
 from core.redis_client import get_redis_sync
 
 log = get_logger("agents.tombombadil.agent")
+
+# Bot-owner identity. Used to look up your Letterboxd profile so the
+# LLM has your favorites + recent ratings as system-prompt context.
+DEFAULT_VIEWER = "Solomon Smith"
 
 
 def _build_llm():
@@ -30,6 +35,24 @@ def _build_llm():
 
 
 _llm = _build_llm()
+_film_knowledge = FilmKnowledge()
+
+
+def _system_messages() -> list[SystemMessage]:
+    msgs = [SystemMessage(content=CONDUCT_PROMPT)]
+    summary = _film_knowledge.get_user_summary(DEFAULT_VIEWER)
+    if summary:
+        msgs.append(
+            SystemMessage(
+                content=(
+                    "You have access to the user's Letterboxd film history. "
+                    "Use it when asked about ratings, favorites, or "
+                    "recommendations. Never invent ratings — if a film isn't "
+                    "in the list below, say so.\n\n" + summary
+                )
+            )
+        )
+    return msgs
 
 
 async def get_response(channel_id: str, text: str) -> str:
@@ -38,7 +61,7 @@ async def get_response(channel_id: str, text: str) -> str:
 
     log.info("llm_request_start", channel=channel_id, text_length=len(text))
 
-    messages = [SystemMessage(content=CONDUCT_PROMPT), HumanMessage(content=text)]
+    messages = [*_system_messages(), HumanMessage(content=text)]
     try:
         loop = asyncio.get_running_loop()
         response = await asyncio.wait_for(

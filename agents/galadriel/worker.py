@@ -36,16 +36,58 @@ def execute_agent_turn(client: httpx.Client, job: Job) -> dict:
     return resp.json()
 
 
+def _format_announcement(job: Job, result: dict) -> str:
+    """Render a human-readable line for delivery."""
+    body = result.get("stdout") or result.get("output")
+    if not body:
+        inner = result.get("result")
+        if isinstance(inner, dict):
+            body = inner.get("reply") or inner.get("text") or inner.get("output")
+        elif isinstance(inner, str):
+            body = inner
+    if not body:
+        body = job.payload.text or job.name
+    return f"[{job.name}] {body}".strip()
+
+
 def announce(job: Job, result: dict) -> None:
-    """Stub delivery hook. Replaced when the Telegram/Discord transport lands."""
-    if job.delivery.mode != "announce" or not job.delivery.to:
+    """Deliver a job's result via the configured transport.
+
+    - ``mode="announce"`` -> structured log only (legacy / dev).
+    - ``mode="telegram"`` -> outbound Telegram sendMessage.
+    - ``mode="none"`` or missing ``to`` -> no-op.
+    """
+    if not job.delivery.to or job.delivery.mode == "none":
         return
-    log.info(
-        "delivery_announce",
-        job_id=job.id,
-        to=job.delivery.to,
-        result_status=result.get("status"),
-    )
+
+    if job.delivery.mode == "announce":
+        log.info(
+            "delivery_announce",
+            job_id=job.id,
+            to=job.delivery.to,
+            result_status=result.get("status"),
+        )
+        return
+
+    if job.delivery.mode == "telegram":
+        from agents.gwaihir.notifier import TelegramNotConfigured, send_message
+
+        text = _format_announcement(job, result)
+        try:
+            send_message(job.delivery.to, text)
+        except TelegramNotConfigured:
+            log.warning(
+                "telegram_not_configured",
+                job_id=job.id,
+                to=job.delivery.to,
+            )
+        except Exception as e:
+            log.error(
+                "telegram_delivery_failed",
+                job_id=job.id,
+                to=job.delivery.to,
+                exc=str(e),
+            )
 
 
 def reschedule(redis, job: Job) -> None:

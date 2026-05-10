@@ -133,11 +133,66 @@ def test_run_one_system_event_does_not_call_http(r):
     assert result_job.last_status == "ok"
 
 
-def test_announce_logs_when_delivery_mode_announce(caplog):
+def test_announce_logs_when_delivery_mode_announce():
     job = _cron_job(delivery=JobDelivery(mode="announce", to="12345"))
     announce(job, {"status": "ok"})
-    # No assertion on log content — just verify the call doesn't raise.
-    # Real delivery integration arrives with the Telegram agent.
+
+
+def test_announce_noop_when_mode_none():
+    job = _cron_job(delivery=JobDelivery(mode="none", to="12345"))
+    announce(job, {"status": "ok"})
+
+
+def test_announce_noop_when_no_recipient():
+    job = _cron_job(delivery=JobDelivery(mode="telegram", to=None))
+    announce(job, {"status": "ok"})
+
+
+def test_announce_telegram_invokes_notifier(monkeypatch):
+    job = _cron_job(
+        name="morning-check",
+        delivery=JobDelivery(mode="telegram", to="42"),
+    )
+
+    calls: list[dict] = []
+
+    def fake_send(chat_id, text, **kwargs):
+        calls.append({"chat_id": chat_id, "text": text})
+        return {"ok": True}
+
+    monkeypatch.setattr("agents.gwaihir.notifier.send_message", fake_send)
+
+    announce(job, {"status": "completed", "result": {"reply": "all clear"}})
+
+    assert len(calls) == 1
+    assert calls[0]["chat_id"] == "42"
+    assert "morning-check" in calls[0]["text"]
+    assert "all clear" in calls[0]["text"]
+
+
+def test_announce_telegram_swallows_send_errors(monkeypatch):
+    job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
+
+    def boom(*a, **kw):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr("agents.gwaihir.notifier.send_message", boom)
+
+    # Must not raise — delivery failure is logged, not propagated.
+    announce(job, {"status": "ok"})
+
+
+def test_announce_telegram_swallows_not_configured(monkeypatch):
+    from agents.gwaihir.notifier import TelegramNotConfigured
+
+    job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
+
+    def not_configured(*a, **kw):
+        raise TelegramNotConfigured("no token")
+
+    monkeypatch.setattr("agents.gwaihir.notifier.send_message", not_configured)
+
+    announce(job, {"status": "ok"})
 
 
 def test_reschedule_cron_advances(r):

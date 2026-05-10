@@ -3,12 +3,26 @@
 Loaded on startup to give context about the group's taste.
 Only officially submitted films count toward stats; casually mentioned
 films live in Redis mentions but not here.
+
+If ``LETTERBOXD_EXPORT_DIR`` points at an unzipped Letterboxd export,
+those rows are merged in at construction. See
+:mod:`agents.tombombadil.letterboxd_loader`.
 """
 
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Any
+
+from agents.tombombadil.letterboxd_loader import (
+    load_letterboxd_export,
+    merge_into_film_database,
+)
+from core.logging import get_logger
+
+log = get_logger("agents.tombombadil.film_knowledge")
 
 FILM_DATABASE = {
     "films": [
@@ -98,10 +112,34 @@ FILM_DATABASE = {
 
 
 class FilmKnowledge:
-    def __init__(self, redis_client=None):
+    def __init__(self, redis_client=None, letterboxd_dir: Path | str | None = None):
         self.redis = redis_client
-        self.films = FILM_DATABASE["films"]
-        self.people = FILM_DATABASE["people"]
+
+        if letterboxd_dir is None:
+            env = os.environ.get("LETTERBOXD_EXPORT_DIR")
+            if env:
+                letterboxd_dir = env
+
+        merged = FILM_DATABASE
+        if letterboxd_dir:
+            path = Path(letterboxd_dir)
+            if path.is_dir():
+                try:
+                    viewer_name = os.environ.get("LETTERBOXD_VIEWER_NAME") or None
+                    export = load_letterboxd_export(path, viewer_name=viewer_name)
+                    merged = merge_into_film_database(FILM_DATABASE, export)
+                    log.info(
+                        "letterboxd_merged",
+                        films=len(merged["films"]),
+                        people=len(merged["people"]),
+                    )
+                except Exception as e:
+                    log.error("letterboxd_load_failed", path=str(path), exc=str(e))
+            else:
+                log.warning("letterboxd_dir_missing", path=str(path))
+
+        self.films = merged["films"]
+        self.people = merged["people"]
 
         if self.redis:
             self._load_to_redis()
@@ -140,6 +178,45 @@ class FilmKnowledge:
                 best_match = match
 
         return best
+
+    def get_user_summary(self, name: str, recent_limit: int = 30) -> str | None:
+        """Compact summary for the LLM system prompt: favorites + recent rated.
+
+        Returns None if the user isn't in ``self.people``.
+        """
+        person = self.people.get(name)
+        if not person:
+            return None
+
+        favorites = (
+            [w["name"] for w in []]
+            + [
+                f["title"]
+                for f in self.films
+                if any(
+                    w.get("name") == name and (w.get("rating") or 0) >= 9
+                    for w in f.get("watchers", [])
+                )
+            ]
+        )
+
+        rated_by_user: list[tuple[str, float]] = []
+        for f in self.films:
+            for w in f.get("watchers", []):
+                if w.get("name") == name and w.get("rating") is not None:
+                    rated_by_user.append((f["title"], float(w["rating"])))
+        rated_by_user.sort(key=lambda x: -x[1])
+
+        lines = [f"Viewer: {name} (avg {person.get('avg_rating', 0)})"]
+        if favorites[:8]:
+            lines.append("Top-rated: " + ", ".join(favorites[:8]))
+        if rated_by_user:
+            top = rated_by_user[:recent_limit]
+            lines.append(
+                "Recent ratings: "
+                + ", ".join(f"{t} ({r:g}/10)" for t, r in top)
+            )
+        return "\n".join(lines)
 
     def get_context_summary(self) -> str:
         summaries = []
