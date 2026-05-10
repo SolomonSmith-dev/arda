@@ -75,14 +75,20 @@ async def on_message(message):
     await bot.process_commands(message)
 
 
+_ROLE_MENTION_RE = __import__("re").compile(r"<@&\d+>")
+_CHANNEL_MENTION_RE = __import__("re").compile(r"<#(\d+)>")
+
+
 def _resolve_mentions(message) -> str:
-    """Rewrite raw ``<@id>`` tokens to human-readable display names.
+    """Rewrite raw ``<@id>``, ``<@!id>``, ``<@&id>``, and ``<#id>``
+    tokens to human-readable forms before the LLM sees them.
 
     The LLM ignores opaque mention tokens (or worse, addresses the
-    wrong person) when a message references multiple Discord users.
-    Substituting the display name keeps the instruction semantically
-    clear: ``Say hello to <@1176...>`` becomes ``Say hello to Wes Prater``.
-    The bot's own mention is stripped entirely.
+    wrong person). Substituting display names keeps instructions clear:
+    ``Say hello to <@1176...>`` becomes ``Say hello to Wes Prater``.
+    The bot's own user mention is stripped entirely; role mentions are
+    stripped (we have no role data); channel mentions become
+    ``#channel-name`` when resolvable, else stripped.
     """
     content = message.content
     for mentioned in message.mentions:
@@ -93,6 +99,14 @@ def _resolve_mentions(message) -> str:
         name = getattr(mentioned, "display_name", None) or str(mentioned)
         content = content.replace(f"<@{mentioned.id}>", name)
         content = content.replace(f"<@!{mentioned.id}>", name)
+    # Role mentions: <@&id>. We don't carry role metadata so just drop.
+    content = _ROLE_MENTION_RE.sub("", content)
+    # Channel mentions: <#id> -> #channel-name when we can resolve.
+    def _sub_channel(match):
+        cid = int(match.group(1))
+        channel = bot.get_channel(cid)
+        return f"#{channel.name}" if channel is not None and hasattr(channel, "name") else ""
+    content = _CHANNEL_MENTION_RE.sub(_sub_channel, content)
     return content.strip()
 
 

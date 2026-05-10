@@ -69,6 +69,29 @@ def _identity_block(viewer: Viewer) -> str:
     )
 
 
+def _club_roster_block() -> str | None:
+    """Compact roster of every viewer in ``FILM_DATABASE['people']``.
+
+    Without this, Tom's per-viewer film summary leaves him blind when a
+    user asks about ANOTHER club member ("How did Anthony rate his
+    films?"). The roster gives the LLM enough context to answer those
+    questions from seed data without inventing ratings.
+    """
+    if not _film_knowledge.people:
+        return None
+    lines: list[str] = ["Other recognised club members and their profiles:"]
+    for name, profile in _film_knowledge.people.items():
+        avg = profile.get("avg_rating", 0)
+        watched = ", ".join(profile.get("films_watched") or []) or "none yet"
+        themes = ", ".join(profile.get("preferred_themes") or [])
+        line = f"- {name} (avg {avg}; watched: {watched}"
+        if themes:
+            line += f"; prefers: {themes}"
+        line += ")"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def _film_summary_block(viewer: Viewer, prefs: dict[str, str]) -> str | None:
     if _suppress_films(prefs):
         metrics.PREF_SUPPRESSED.inc()
@@ -129,6 +152,10 @@ def _build_system_messages(
         _SELF_DESCRIPTION,
         _identity_block(viewer),
     ]
+    if not _suppress_films(prefs):
+        roster = _club_roster_block()
+        if roster:
+            blocks.append(roster)
     film_block = _film_summary_block(viewer, prefs)
     if film_block:
         blocks.append(film_block)

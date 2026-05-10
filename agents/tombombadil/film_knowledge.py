@@ -242,20 +242,44 @@ class FilmKnowledge:
         return "Films watched by the group:\n" + "\n".join(summaries)
 
     def recommend_for_person(self, name: str) -> str | None:
-        person = self.get_person_profile(name)
-        if not person:
+        key = self._resolve_person_key(name)
+        if key is None:
             return None
+        person = self.people[key]
 
-        suggestion = self.suggest_for_person(name)
-        if not suggestion:
-            return f"I don't have enough data yet to recommend something for {name}."
+        suggestion = self.suggest_for_person(key)
+        if suggestion:
+            themes = ", ".join(suggestion["themes"][:3])
+            response = f"**For {key}:**\n"
+            response += f"I'd recommend **{suggestion['title']}** ({suggestion['year']})\n"
+            response += f"**Why?** You tend to go for films about {themes}. {suggestion['title']} is all about that.\n"
+            response += f"**Quick take:** {suggestion['group_consensus']}"
+            return response
 
-        themes = ", ".join(suggestion["themes"][:3])
-        response = f"**For {name}:**\n"
-        response += f"I'd recommend **{suggestion['title']}** ({suggestion['year']})\n"
-        response += f"**Why?** You tend to go for films about {themes}. {suggestion['title']} is all about that.\n"
-        response += f"**Quick take:** {suggestion['group_consensus']}"
-        return response
+        # Fall-through: every catalog film with themes has been watched
+        # by this viewer. Surface their highest-rated history as social
+        # proof rather than refusing.
+        rated = [
+            (f["title"], f.get("year"), float(w["rating"]))
+            for f in self.films
+            for w in f.get("watchers", [])
+            if (w.get("name") or "").lower() == key.lower() and w.get("rating") is not None
+        ]
+        rated.sort(key=lambda x: -x[2])
+        if not rated:
+            return f"I don't have enough data yet to recommend something for {key}."
+
+        favorites = ", ".join(
+            f"**{t}**{f' ({y})' if y else ''} ({r:g}/10)"
+            for t, y, r in rated[:5]
+        )
+        themes = ", ".join(person.get("preferred_themes") or [])
+        return (
+            f"**For {key}:** you've already watched every themed film in the "
+            "catalog, so I don't have an unwatched suggestion. Your top picks "
+            f"so far -- {favorites}. Lean into "
+            f"{themes or 'whatever feels right tonight'}."
+        )
 
     def answer_about_film(self, question: str) -> str | None:
         question_lower = question.lower()
