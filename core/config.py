@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     # LLM providers
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    claude_api_key: str = ""
 
     # Dev mode -- mock all LLM calls
     use_mock_llm: bool = True

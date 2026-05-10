@@ -39,7 +39,11 @@ Thumbs.db
 *.swo
 
 # Project-specific
-data/
+# Letterboxd CSV exports are personal and bulky — never commit.
+data/letterboxd/
+# Tom Bombadil identity map contains Discord snowflakes; only the
+# sanitized .example ships.
+data/tombombadil/identity.yaml
 volumes/
 milvus_data/
 redis_data/

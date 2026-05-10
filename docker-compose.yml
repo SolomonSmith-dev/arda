@@ -88,6 +88,10 @@ services:
       # in its own container with its own FilmKnowledge instance, so it
       # needs its own access to the export.
       - ./data/letterboxd:/app/data/letterboxd:ro
+      # identity.yaml maps Discord author IDs to film-club viewers
+      # (Solomon / regulars / strangers). Copy the .example beside it
+      # and fill in real snowflakes. Gitignored on purpose.
+      - ./data/tombombadil:/app/data/tombombadil:ro
     depends_on:
       redis:
         condition: service_healthy

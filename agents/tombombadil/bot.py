@@ -3,9 +3,12 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 
+from agents.tombombadil import memory
 from agents.tombombadil.agent import acknowledge_notes, get_response
+from agents.tombombadil.identity import resolve as resolve_viewer
 from core.config import settings
 from core.logging import get_logger, new_trace_id
+from core.redis_client import get_redis_sync
 
 log = get_logger("agents.tombombadil.bot")
 
@@ -27,9 +30,12 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
+    viewer = resolve_viewer(str(message.author.id), str(message.author))
     log.info(
         "message_received",
         author=str(message.author),
+        viewer=viewer.canonical_name or viewer.discord_name,
+        tier=viewer.tier.value,
         channel=str(message.channel),
         content_preview=message.content[:100],
     )
@@ -37,14 +43,15 @@ async def on_message(message):
     content_lower = message.content.lower()
     if "film:" in content_lower and "rating" in content_lower:
         log.info("auto_parse_notes", author=str(message.author))
-        reply = acknowledge_notes(message.content)
+        reply = acknowledge_notes(message.content, viewer=viewer)
         await message.reply(reply)
         log.info("note_processed", response_preview=reply[:100])
         return
 
     if bot.user.mentioned_in(message):
         content = message.content.replace(f"<@{bot.user.id}>", "").strip()
-        reply = await get_response(message.channel.id, content)
+        scope_key = memory.history_scope_key(message)
+        reply = await get_response(scope_key, content, viewer, get_redis_sync())
         await message.reply(reply)
         log.info("mention_response_sent", response_preview=reply[:100])
 

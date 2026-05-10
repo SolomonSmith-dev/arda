@@ -77,10 +77,12 @@ FILM_DATABASE = {
             "style": "Direct, emotional, focused on character over spectacle",
             "films_watched": ["Ran", "La Haine", "Ghost Dog"],
         },
+        # Collapsed from a duplicate dict-literal key per ADR 0002.
+        # "Engaged, emotional reactions" wins (was the second-key value).
         "Isis": {
             "avg_rating": 8.5,
             "preferred_themes": ["beauty in chaos", "brotherhood", "moral ambiguity"],
-            "style": "Poetic, visual, finds grace in tragedy",
+            "style": "Engaged, emotional reactions, partner of Solomon",
             "films_watched": ["Ran", "La Haine"],
         },
         "Anthony Taylor": {
@@ -100,12 +102,6 @@ FILM_DATABASE = {
             "preferred_themes": ["code", "loneliness", "honor"],
             "style": "Casual, observational, appreciates visual moments",
             "films_watched": ["Ghost Dog"],
-        },
-        "Isis": {  # noqa: F601 -- duplicate key in original; second wins, see ADR 0002
-            "avg_rating": 8.5,
-            "preferred_themes": ["beauty in chaos", "brotherhood", "moral ambiguity"],
-            "style": "Engaged, emotional reactions, partner of Solomon",
-            "films_watched": ["Ran", "La Haine"],
         },
     },
 }
@@ -179,35 +175,50 @@ class FilmKnowledge:
 
         return best
 
+    def _resolve_person_key(self, name: str) -> str | None:
+        """Return the canonical ``self.people`` key matching ``name``,
+        case-insensitively. Returns ``None`` if no match.
+        """
+        if not name:
+            return None
+        if name in self.people:
+            return name
+        target = name.lower()
+        for key in self.people:
+            if key.lower() == target:
+                return key
+        return None
+
     def get_user_summary(self, name: str, recent_limit: int = 30) -> str | None:
         """Compact summary for the LLM system prompt: favorites + recent rated.
 
-        Returns None if the user isn't in ``self.people``.
+        Returns ``None`` if the user isn't in ``self.people``. Callers
+        decide what to render for unknown viewers (see
+        :mod:`agents.tombombadil.agent` for the stranger fallback).
         """
-        person = self.people.get(name)
-        if not person:
+        key = self._resolve_person_key(name)
+        if key is None:
             return None
+        person = self.people[key]
 
-        favorites = (
-            [w["name"] for w in []]
-            + [
-                f["title"]
-                for f in self.films
-                if any(
-                    w.get("name") == name and (w.get("rating") or 0) >= 9
-                    for w in f.get("watchers", [])
-                )
-            ]
-        )
+        favorites = [
+            f["title"]
+            for f in self.films
+            if any(
+                (w.get("name") or "").lower() == key.lower()
+                and (w.get("rating") or 0) >= 9
+                for w in f.get("watchers", [])
+            )
+        ]
 
         rated_by_user: list[tuple[str, float]] = []
         for f in self.films:
             for w in f.get("watchers", []):
-                if w.get("name") == name and w.get("rating") is not None:
+                if (w.get("name") or "").lower() == key.lower() and w.get("rating") is not None:
                     rated_by_user.append((f["title"], float(w["rating"])))
         rated_by_user.sort(key=lambda x: -x[1])
 
-        lines = [f"Viewer: {name} (avg {person.get('avg_rating', 0)})"]
+        lines = [f"Viewer: {key} (avg {person.get('avg_rating', 0)})"]
         if favorites[:8]:
             lines.append("Top-rated: " + ", ".join(favorites[:8]))
         if rated_by_user:
