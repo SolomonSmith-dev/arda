@@ -4,6 +4,63 @@ from __future__ import annotations
 
 import pytest
 
+from agents.tombombadil import bot as tom_bot
+from agents.tombombadil import memory
+
+
+async def _send_mention(channel, user, text, *, bot_user):
+    from tests.integration.conftest import make_message
+    content = f"<@{bot_user.id}> {text}"
+    msg = make_message(user, channel, content, mentions=[bot_user])
+    await tom_bot.on_message(msg)
+    return msg
+
+
+@pytest.mark.asyncio
+async def test_concurrent_mentions_history_interleaves(
+    identity_yaml, fake_redis, fake_bot_user, solomon, brian, guild_channel
+):
+    """Spec 5.2: two users mentioning Tom back-to-back both get replies
+    and both turn-pairs land in the shared channel history list in
+    arrival order."""
+    await _send_mention(guild_channel, solomon, "hello from solomon", bot_user=fake_bot_user)
+    await _send_mention(guild_channel, brian, "hello from brian", bot_user=fake_bot_user)
+    turns = memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}")
+    # 4 turns: solomon-user, solomon-assistant, brian-user, brian-assistant
+    assert len(turns) == 4
+    assert turns[0].viewer == "Solomon Smith"
+    assert turns[2].viewer == "Brian"
+
+
+@pytest.mark.asyncio
+async def test_separate_rate_limit_buckets_per_user(
+    identity_yaml, fake_redis, fake_bot_user, brian, wes, guild_channel
+):
+    """Spec 5.2: per-user token buckets isolate rate limits. Burning
+    Brian's budget doesn't lock out Wes."""
+    from agents.tombombadil import guards
+    for _ in range(guards.RATE_LIMIT_MAX_TOKENS):
+        await _send_mention(guild_channel, brian, "hi", bot_user=fake_bot_user)
+    blocked = await _send_mention(guild_channel, brian, "again", bot_user=fake_bot_user)
+    free = await _send_mention(guild_channel, wes, "hi", bot_user=fake_bot_user)
+    assert "Easy there" in blocked.reply_log[-1]
+    assert "Easy there" not in free.reply_log[-1]
+
+
+@pytest.mark.asyncio
+async def test_dm_history_isolated_from_channel(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel, dm_channel
+):
+    """Spec 5.2 / 5.4: DM context never leaks into a channel and vice versa."""
+    await _send_mention(dm_channel, solomon, "private question", bot_user=fake_bot_user)
+    await _send_mention(guild_channel, solomon, "public question", bot_user=fake_bot_user)
+    dm_turns = memory.recent_turns(fake_redis, f"tom:hist:dm:{solomon.id}")
+    ch_turns = memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}")
+    assert any("private question" in t.content for t in dm_turns)
+    assert all("public question" not in t.content for t in dm_turns)
+    assert any("public question" in t.content for t in ch_turns)
+    assert all("private question" not in t.content for t in ch_turns)
+
 
 @pytest.mark.xfail(
     strict=True,
