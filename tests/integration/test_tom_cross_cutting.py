@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
+from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import bot as tom_bot
 from agents.tombombadil import memory
 
@@ -86,3 +89,57 @@ async def test_stranger_first_contact_includes_greeting_and_suggestion(
     assert stranger.display_name.lower() in reply
     assert "film" in reply or "club" in reply
     assert "/whoami" in reply or "what you've been watching" in reply or "tell me" in reply
+
+
+@pytest.mark.asyncio
+async def test_llm_timeout_returns_canned_no_history(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """Spec 5.3 LLM timeout: returns 'LLM timeout, try again' and writes
+    NO history (so retries don't accumulate phantom turns)."""
+    def raise_timeout(*_a, **_k):
+        raise TimeoutError("simulated")
+
+    with patch.object(tom_agent._llm, "invoke", side_effect=raise_timeout):
+        msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
+    assert "LLM timeout" in msg.reply_log[-1]
+    assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
+
+
+@pytest.mark.asyncio
+async def test_llm_empty_content_returns_canned_no_history(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """Spec 5.3 LLM empty: 'No response generated', no history."""
+    from agents._mock_llm import _MockResponse
+
+    with patch.object(tom_agent._llm, "invoke", return_value=_MockResponse(content="")):
+        msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
+    assert msg.reply_log[-1] == "No response generated"
+    assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
+
+
+@pytest.mark.asyncio
+async def test_llm_arbitrary_exception_returns_canned(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """Spec 5.3 LLM crash: 'Error processing your request', no history."""
+    with patch.object(tom_agent._llm, "invoke", side_effect=RuntimeError("boom")):
+        msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
+    assert "Error processing" in msg.reply_log[-1]
+    assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
+
+
+@pytest.mark.asyncio
+async def test_finrod_query_failure_falls_back_to_no_recall(
+    identity_yaml, fake_redis, fake_bot_user, finrod_in_memory, solomon, guild_channel
+):
+    """Spec 5.3 Finrod outage: recall_facts returns [] on backend errors
+    and the reply continues without recall context."""
+    async def broken_run(*_a, **_k):
+        from core.models import AgentResult, TaskStatus
+        return AgentResult(task_id="x", agent="finrod", status=TaskStatus.FAILED, error="down")
+
+    finrod_in_memory.run = broken_run  # type: ignore[method-assign]
+    msg = await _send_mention(guild_channel, solomon, "tell me about Ran", bot_user=fake_bot_user)
+    assert msg.reply_log  # still replies; recall failure is non-fatal
