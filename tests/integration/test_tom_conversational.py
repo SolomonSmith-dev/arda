@@ -6,6 +6,7 @@ import pytest
 
 from agents.tombombadil import bot as tom_bot
 from agents.tombombadil import guards, memory
+from tests.integration.conftest import _send_mention
 
 
 def test_harness_imports_cleanly(identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel):
@@ -14,15 +15,6 @@ def test_harness_imports_cleanly(identity_yaml, fake_redis, fake_bot_user, solom
     assert guild_channel.id == 42
     assert fake_bot_user.id == 1487666626919792740
     assert fake_redis.ping()
-
-
-async def _send_mention(channel, user, text, *, bot_user):
-    """Build a mention message addressed to Tom and drive on_message."""
-    content = f"<@{bot_user.id}> {text}"
-    from tests.integration.conftest import make_message
-    msg = make_message(user, channel, content, mentions=[bot_user])
-    await tom_bot.on_message(msg)
-    return msg
 
 
 @pytest.mark.asyncio

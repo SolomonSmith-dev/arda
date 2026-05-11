@@ -160,3 +160,34 @@ def make_message(
 
 def make_interaction(user: FakeUser, channel: FakeChannel) -> FakeInteraction:
     return FakeInteraction(user=user, channel_id=channel.id, channel=channel)
+
+
+# Module-level helper reused across test modules.
+async def _send_mention(channel, user, text, *, bot_user):
+    """Build a mention message addressed to Tom and drive on_message."""
+    from agents.tombombadil import bot as tom_bot
+    content = f"<@{bot_user.id}> {text}"
+    msg = make_message(user, channel, content, mentions=[bot_user])
+    await tom_bot.on_message(msg)
+    return msg
+
+
+SAMPLE_LETTERBOXD_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:letterboxd="https://letterboxd.com">
+  <channel>
+    <item>
+      <title>Stalker, 1979 - ★★★★★</title>
+      <letterboxd:filmTitle>Stalker</letterboxd:filmTitle>
+      <letterboxd:filmYear>1979</letterboxd:filmYear>
+      <letterboxd:memberRating>5.0</letterboxd:memberRating>
+      <letterboxd:watchedDate>2026-05-09</letterboxd:watchedDate>
+    </item>
+    <item>
+      <title>Solaris, 1972 - ★★★★½</title>
+      <letterboxd:filmTitle>Solaris</letterboxd:filmTitle>
+      <letterboxd:filmYear>1972</letterboxd:filmYear>
+      <letterboxd:memberRating>4.5</letterboxd:memberRating>
+      <letterboxd:watchedDate>2026-05-10</letterboxd:watchedDate>
+    </item>
+  </channel>
+</rss>"""

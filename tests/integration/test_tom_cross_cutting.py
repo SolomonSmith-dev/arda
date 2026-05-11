@@ -7,37 +7,10 @@ from unittest.mock import patch
 import pytest
 
 from agents.tombombadil import agent as tom_agent
-from agents.tombombadil import bot as tom_bot
 from agents.tombombadil import memory
-
-# Reused from test_tom_scheduled.py to avoid cross-file imports.
-SAMPLE_FEED = """<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:letterboxd="https://letterboxd.com">
-  <channel>
-    <item>
-      <title>Stalker, 1979 - ★★★★★</title>
-      <letterboxd:filmTitle>Stalker</letterboxd:filmTitle>
-      <letterboxd:filmYear>1979</letterboxd:filmYear>
-      <letterboxd:memberRating>5.0</letterboxd:memberRating>
-      <letterboxd:watchedDate>2026-05-09</letterboxd:watchedDate>
-    </item>
-    <item>
-      <title>Solaris, 1972 - ★★★★½</title>
-      <letterboxd:filmTitle>Solaris</letterboxd:filmTitle>
-      <letterboxd:filmYear>1972</letterboxd:filmYear>
-      <letterboxd:memberRating>4.5</letterboxd:memberRating>
-      <letterboxd:watchedDate>2026-05-10</letterboxd:watchedDate>
-    </item>
-  </channel>
-</rss>"""
-
-
-async def _send_mention(channel, user, text, *, bot_user):
-    from tests.integration.conftest import make_message
-    content = f"<@{bot_user.id}> {text}"
-    msg = make_message(user, channel, content, mentions=[bot_user])
-    await tom_bot.on_message(msg)
-    return msg
+from agents.tombombadil.identity import resolve as resolve_viewer
+from tests.integration.conftest import SAMPLE_LETTERBOXD_FEED as SAMPLE_FEED
+from tests.integration.conftest import _send_mention
 
 
 @pytest.mark.asyncio
@@ -88,9 +61,13 @@ async def test_dm_history_isolated_from_channel(
 
 @pytest.mark.xfail(
     strict=True,
-    reason="D7: stranger onboarding paragraph not specialised. First-contact "
-    "currently uses the generic film-aware reply; spec 5.1 wants greeting + "
-    "concrete next action.",
+    reason=(
+        "D7: stranger onboarding paragraph not specialised. This test can "
+        "only pass against a real LLM that follows the onboarding system "
+        "prompt; under MockLLM the assertions fail regardless of the code "
+        "path. Strict-xfail until D7 ships AND a non-mock LLM (or a "
+        "templated onboarding response) drives this branch."
+    ),
 )
 @pytest.mark.asyncio
 async def test_stranger_first_contact_includes_greeting_and_suggestion(
@@ -178,7 +155,6 @@ async def test_dm_reply_does_not_mention_other_users_facts(
 ):
     """Spec 5.4: Tom's reply to Solomon in a DM never surfaces a fact
     attributed to Brian in the system prompt."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     bv = resolve_viewer(str(brian.id), str(brian))
     await memory.remember_fact(bv, "brian secretly hates Tarkovsky", source_channel="x")
 
@@ -201,7 +177,6 @@ async def test_dm_reply_does_not_mention_other_users_facts(
 def test_history_ltrim_caps_at_two_times_max_turns(identity_yaml, fake_redis, solomon):
     """Spec 5.4 / memory invariants: scope history never exceeds
     2 * HISTORY_MAX_TURNS entries."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     viewer = resolve_viewer(str(solomon.id), str(solomon))
     scope = "tom:hist:ch:cap"
     for i in range(memory.HISTORY_MAX_TURNS * 4):

@@ -7,6 +7,7 @@ import json
 from agents.galadriel.models import Job, JobDelivery, JobPayload, JobSchedule
 from agents.galadriel.worker import announce
 from agents.tombombadil import club, delivery, sync_job
+from tests.integration.conftest import SAMPLE_LETTERBOXD_FEED as SAMPLE_FEED
 
 
 def _job(channel_id: str = "42", film: str = "Inception") -> Job:
@@ -71,26 +72,6 @@ def test_ensure_weekly_club_night_is_idempotent(fake_redis):
 # ---------------------------------------------------------------------------
 # Spec 4.3.2: Letterboxd auto-sync
 # ---------------------------------------------------------------------------
-
-SAMPLE_FEED = """<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:letterboxd="https://letterboxd.com">
-  <channel>
-    <item>
-      <title>Stalker, 1979 - ★★★★★</title>
-      <letterboxd:filmTitle>Stalker</letterboxd:filmTitle>
-      <letterboxd:filmYear>1979</letterboxd:filmYear>
-      <letterboxd:memberRating>5.0</letterboxd:memberRating>
-      <letterboxd:watchedDate>2026-05-09</letterboxd:watchedDate>
-    </item>
-    <item>
-      <title>Solaris, 1972 - ★★★★½</title>
-      <letterboxd:filmTitle>Solaris</letterboxd:filmTitle>
-      <letterboxd:filmYear>1972</letterboxd:filmYear>
-      <letterboxd:memberRating>4.5</letterboxd:memberRating>
-      <letterboxd:watchedDate>2026-05-10</letterboxd:watchedDate>
-    </item>
-  </channel>
-</rss>"""
 
 
 def test_sync_saves_new_films_and_advances_watermark(fake_redis):

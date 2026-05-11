@@ -8,6 +8,7 @@ import pytest
 
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import memory
+from agents.tombombadil.identity import resolve as resolve_viewer
 
 
 @pytest.mark.asyncio
@@ -16,7 +17,6 @@ async def test_recall_returns_stored_fact_for_owner(
 ):
     """Spec 4.4.1: a previously remembered fact comes back when queried
     with the same wording (MockEmbedder = cosine 1.0 on identity)."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     viewer = resolve_viewer(str(solomon.id), str(solomon))
     await memory.remember_fact(viewer, "user loves Tarkovsky", source_channel="x")
     recalled = await memory.recall_facts(viewer, "[Solomon Smith] user loves Tarkovsky")
@@ -29,7 +29,6 @@ async def test_recall_filters_by_viewer(
 ):
     """Spec 4.4.1 / 5.4: recall returns only the requesting viewer's
     facts, never another user's."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     sv = resolve_viewer(str(solomon.id), str(solomon))
     bv = resolve_viewer(str(brian.id), str(brian))
     await memory.remember_fact(sv, "solomon loves Tarkovsky", source_channel="x")
@@ -44,7 +43,6 @@ async def test_recall_score_floor_filters_irrelevant(
     identity_yaml, fake_redis, finrod_in_memory, solomon
 ):
     """Spec 4.4.1: matches below RECALL_SCORE_FLOOR (0.35) are dropped."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     viewer = resolve_viewer(str(solomon.id), str(solomon))
     await memory.remember_fact(viewer, "user prefers slow cinema", source_channel="x")
     recalled = await memory.recall_facts(viewer, "completely unrelated random topic 1234")
@@ -56,7 +54,6 @@ async def test_stranger_recall_returns_empty(
     identity_yaml, fake_redis, finrod_in_memory, stranger
 ):
     """Spec 4.4.1: strangers have no canonical_name and therefore no facts."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     viewer = resolve_viewer(str(stranger.id), str(stranger))
     recalled = await memory.recall_facts(viewer, "anything")
     assert recalled == []
@@ -68,7 +65,6 @@ async def test_suppress_films_pref_swaps_film_block(
 ):
     """Spec 4.4.2: suppress_films=1 replaces the film summary with the
     'has asked you NOT to bring up films' line in the system prompt."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     viewer = resolve_viewer(str(brian.id), str(brian))
     memory.set_pref(fake_redis, viewer.discord_id, "suppress_films", "1")
     captured: dict = {}
@@ -93,7 +89,6 @@ async def test_do_not_log_pref_skips_fact_extractor(
 ):
     """Spec 4.4.2: do_not_log=1 means a 'remember that...' message never
     persists a fact."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     viewer = resolve_viewer(str(solomon.id), str(solomon))
     memory.set_pref(fake_redis, viewer.discord_id, "do_not_log", "1")
     await tom_agent.get_response(
@@ -111,7 +106,6 @@ async def test_roster_block_lists_all_film_db_people(
     """Spec 4.4.3: the system prompt includes every FILM_DATABASE person
     so Tom can answer cross-user questions (e.g. 'how did Anthony rate?')
     without inventing data."""
-    from agents.tombombadil.identity import resolve as resolve_viewer
     viewer = resolve_viewer(str(solomon.id), str(solomon))
     captured: dict = {}
 
