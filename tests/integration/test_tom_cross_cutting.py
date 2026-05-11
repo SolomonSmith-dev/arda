@@ -10,6 +10,27 @@ from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import bot as tom_bot
 from agents.tombombadil import memory
 
+# Reused from test_tom_scheduled.py to avoid cross-file imports.
+SAMPLE_FEED = """<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:letterboxd="https://letterboxd.com">
+  <channel>
+    <item>
+      <title>Stalker, 1979 - ★★★★★</title>
+      <letterboxd:filmTitle>Stalker</letterboxd:filmTitle>
+      <letterboxd:filmYear>1979</letterboxd:filmYear>
+      <letterboxd:memberRating>5.0</letterboxd:memberRating>
+      <letterboxd:watchedDate>2026-05-09</letterboxd:watchedDate>
+    </item>
+    <item>
+      <title>Solaris, 1972 - ★★★★½</title>
+      <letterboxd:filmTitle>Solaris</letterboxd:filmTitle>
+      <letterboxd:filmYear>1972</letterboxd:filmYear>
+      <letterboxd:memberRating>4.5</letterboxd:memberRating>
+      <letterboxd:watchedDate>2026-05-10</letterboxd:watchedDate>
+    </item>
+  </channel>
+</rss>"""
+
 
 async def _send_mention(channel, user, text, *, bot_user):
     from tests.integration.conftest import make_message
@@ -143,3 +164,85 @@ async def test_finrod_query_failure_falls_back_to_no_recall(
     finrod_in_memory.run = broken_run  # type: ignore[method-assign]
     msg = await _send_mention(guild_channel, solomon, "tell me about Ran", bot_user=fake_bot_user)
     assert msg.reply_log  # still replies; recall failure is non-fatal
+
+
+# ---------------------------------------------------------------------------
+# Spec 5.4: Privacy invariants
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dm_reply_does_not_mention_other_users_facts(
+    identity_yaml, fake_redis, fake_bot_user, finrod_in_memory,
+    solomon, brian, dm_channel
+):
+    """Spec 5.4: Tom's reply to Solomon in a DM never surfaces a fact
+    attributed to Brian in the system prompt."""
+    from agents.tombombadil.identity import resolve as resolve_viewer
+    bv = resolve_viewer(str(brian.id), str(brian))
+    await memory.remember_fact(bv, "brian secretly hates Tarkovsky", source_channel="x")
+
+    captured: dict = {}
+
+    def fake_invoke(messages):
+        captured["sys"] = "\n".join(
+            m.content for m in messages if m.__class__.__name__ == "SystemMessage"
+        )
+        from agents._mock_llm import _MockResponse
+        return _MockResponse(content="ok")
+
+    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+        await _send_mention(dm_channel, solomon, "what do you remember about Brian?",
+                             bot_user=fake_bot_user)
+
+    assert "brian secretly hates" not in captured["sys"].lower()
+
+
+def test_history_ltrim_caps_at_two_times_max_turns(identity_yaml, fake_redis, solomon):
+    """Spec 5.4 / memory invariants: scope history never exceeds
+    2 * HISTORY_MAX_TURNS entries."""
+    from agents.tombombadil.identity import resolve as resolve_viewer
+    viewer = resolve_viewer(str(solomon.id), str(solomon))
+    scope = "tom:hist:ch:cap"
+    for i in range(memory.HISTORY_MAX_TURNS * 4):
+        memory.append_turn(fake_redis, scope, viewer, "user" if i % 2 == 0 else "assistant", f"msg {i}")
+    raw = fake_redis.lrange(scope, 0, -1)
+    assert len(raw) <= memory.HISTORY_MAX_TURNS * 2
+
+
+# ---------------------------------------------------------------------------
+# Spec 5.5: Operator surface
+# ---------------------------------------------------------------------------
+
+
+def test_operator_ban_blocks_user(identity_yaml, fake_redis, brian):
+    """Spec 5.5: SADD tom:bans <id> -> subsequent guard_check returns
+    the ban refusal string."""
+    from agents.tombombadil import guards
+    fake_redis.sadd(guards.BAN_SET_KEY, str(brian.id))
+    assert guards.is_banned(fake_redis, str(brian.id)) is True
+
+
+def test_operator_unban_restores_access(identity_yaml, fake_redis, brian):
+    """Spec 5.5: SREM tom:bans <id> reverses the ban."""
+    from agents.tombombadil import guards
+    guards.ban(fake_redis, str(brian.id))
+    guards.unban(fake_redis, str(brian.id))
+    assert guards.is_banned(fake_redis, str(brian.id)) is False
+
+
+def test_operator_watermark_reset_re_pulls_letterboxd(fake_redis):
+    """Spec 5.5: DEL tom:letterboxd:last_watched_iso causes the next
+    sync to see all entries as 'new' again."""
+    from agents.tombombadil import sync_job
+    sync_job.run_sync(
+        fake_redis, username="x", viewer_name="Solomon Smith",
+        feed_text=SAMPLE_FEED,
+    )
+    fake_redis.delete(sync_job.WATERMARK_KEY)
+    result = sync_job.run_sync(
+        fake_redis, username="x", viewer_name="Solomon Smith",
+        feed_text=SAMPLE_FEED,
+    )
+    # Both films re-seen as new because watermark was wiped.
+    assert result.new == 2
