@@ -7,17 +7,7 @@ import pytest
 from agents.tombombadil import club, memory
 from agents.tombombadil import commands as tom_commands
 from agents.tombombadil.film_knowledge import FilmKnowledge
-from agents.tombombadil.identity import Tier, Viewer
 from agents.tombombadil.identity import resolve as resolve_viewer
-
-
-def _viewer(discord_id: int, name: str, tier: Tier) -> Viewer:
-    return Viewer(
-        discord_id=str(discord_id),
-        discord_name=name,
-        canonical_name=name if tier is not Tier.STRANGER else None,
-        tier=tier,
-    )
 
 
 def test_rate_saves_for_owner(identity_yaml, fake_redis, solomon):
@@ -131,8 +121,10 @@ def test_club_stats_includes_seed_films():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def knowledge():
+    """FilmKnowledge is treated read-only by all callers in this file.
+    Module-scoping avoids reparsing FILM_DATABASE for every test."""
     return FilmKnowledge()
 
 
