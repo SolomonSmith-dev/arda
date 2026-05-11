@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
+from agents._mock_llm import _MockResponse
+from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import bot as tom_bot
 from agents.tombombadil import guards, memory
-from tests.integration.conftest import _send_mention
+from agents.tombombadil.bot import CONFIRM_EMOJI, REJECT_EMOJI
+from tests.integration._doubles import FakeMessage, FakeReaction, FakeUser
+from tests.integration.conftest import _send_mention, make_message
+
+
+def _sole_draft_id(redis) -> int:
+    """Return the message_id of the single pending draft. Fails fast if
+    the draft store has 0 or >1 entries."""
+    keys = redis.keys("tom:draft:*")
+    assert len(keys) == 1, f"expected 1 draft, got {len(keys)}"
+    return int(keys[0].split(":")[-1])
 
 
 def test_harness_imports_cleanly(identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel):
@@ -104,7 +118,7 @@ async def test_owner_bypasses_rate_limit(
     """Spec 3.1 / 4.1.1: owner tier bypasses rate-limiting."""
     for _ in range(guards.RATE_LIMIT_MAX_TOKENS * 2):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
-        assert "Easy there" not in msg.reply_log[-1]
+        assert "Easy there" not in msg.reply_log[0]
 
 
 @pytest.mark.asyncio
@@ -113,19 +127,14 @@ async def test_mention_resolution_substitutes_display_names(
 ):
     """Spec V4 / 4.1.1: <@id> tokens for non-bot users are substituted
     with display names before the LLM call."""
-    from tests.integration.conftest import make_message
     captured: dict = {}
 
     def fake_invoke(messages):
         captured["last_human"] = next(
             m.content for m in reversed(messages) if m.__class__.__name__ == "HumanMessage"
         )
-        from agents._mock_llm import _MockResponse
         return _MockResponse(content="ok")
 
-    from unittest.mock import patch
-
-    from agents.tombombadil import agent as tom_agent
     content = f"<@{fake_bot_user.id}> Say hello to <@{wes.id}>"
     msg = make_message(solomon, guild_channel, content, mentions=[fake_bot_user, wes])
     with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
@@ -178,7 +187,6 @@ async def test_stranger_rating_does_not_offer_draft(
 
 async def _react(message_id, channel, user, emoji):
     """Drive on_reaction_add with a freshly-built FakeReaction."""
-    from tests.integration._doubles import FakeMessage, FakeReaction, FakeUser
     tom = FakeUser(id=0, name="TomBombadil")
     target = FakeMessage(id=message_id, content="React ...", author=tom, channel=channel, mentions=[])
     await tom_bot.on_reaction_add(FakeReaction(emoji=emoji, message=target), user)
@@ -194,11 +202,9 @@ async def test_check_reaction_commits_draft(
         guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
     )
     # The bound draft was created against the second reply's id.
-    msg_ids = [m for m in fake_redis.keys("tom:draft:*")]
-    assert len(msg_ids) == 1
-    bound_id = int(msg_ids[0].split(":")[-1])
+    bound_id = _sole_draft_id(fake_redis)
 
-    target = await _react(bound_id, guild_channel, solomon, "✅")
+    target = await _react(bound_id, guild_channel, solomon, CONFIRM_EMOJI)
     assert any("logged" in r for r in target.reply_log)
     assert fake_redis.sismember("films", "Stalker")
     assert fake_redis.sismember("watchers", "Solomon Smith")
@@ -214,8 +220,8 @@ async def test_x_reaction_skips_draft(
     await _send_mention(
         guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
     )
-    bound_id = int(list(fake_redis.keys("tom:draft:*"))[0].split(":")[-1])
-    target = await _react(bound_id, guild_channel, solomon, "❌")
+    bound_id = _sole_draft_id(fake_redis)
+    target = await _react(bound_id, guild_channel, solomon, REJECT_EMOJI)
     assert any("Skipped" in r for r in target.reply_log)
     assert not fake_redis.sismember("films", "Stalker")
 
@@ -229,8 +235,8 @@ async def test_wrong_user_reaction_ignored(
     await _send_mention(
         guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
     )
-    bound_id = int(list(fake_redis.keys("tom:draft:*"))[0].split(":")[-1])
-    target = await _react(bound_id, guild_channel, brian, "✅")
+    bound_id = _sole_draft_id(fake_redis)
+    target = await _react(bound_id, guild_channel, brian, CONFIRM_EMOJI)
     # No save, no reply.
     assert target.reply_log == []
     assert not fake_redis.sismember("films", "Stalker")
@@ -245,14 +251,8 @@ async def test_concurrent_drafts_bind_to_original_drafters(
     """Spec 4.1.2 / 5.2: when Solomon and Brian draft ratings in the
     same channel, each draft binds under its own drafter's discord_id.
 
-    Limitation: this test exercises SEQUENTIAL on_message calls because
-    asyncio's cooperative scheduling completes each `await
-    tom_bot.on_message(...)` before the next runs. The true
-    concurrency race (interleaved coroutines pushing and popping in
-    overlapping turns) is NOT demonstrated here and would require a
-    different orchestration. Sub-project C should revisit D2 against
-    the actual code to determine whether the race is reachable in
-    production, and if so, design a test that triggers it.
+    Limitation: SEQUENTIAL await calls only -- see
+    tests/integration/__init__.py "Known limitations" for the full caveat.
     """
     await _send_mention(
         guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
