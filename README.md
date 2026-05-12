@@ -1,6 +1,6 @@
 # ARDA
 
-A four-agent system behind one FastAPI entry point. One unified codebase, one HTTP contract, one MCP surface — four named specialists doing the actual work. Tolkien-themed because the routing was getting confusing.
+A four-agent system behind one FastAPI entry point. One unified codebase, one HTTP contract, one MCP surface, four named specialists doing the actual work. Tolkien-themed because the routing was getting confusing.
 
 ```mermaid
 flowchart TD
@@ -30,7 +30,7 @@ flowchart TD
 | **Finrod** | `retriever` | RAG. Ingests text, embeds, stores vectors, answers grounded queries. Falls back to in-memory store + hash-based embedder when Milvus / `sentence-transformers` are absent. | `meta-llama/llama-4-scout-17b-16e-instruct` (Groq) |
 | **Tom Bombadil** | `specialist` | Discord film-club bot. Parses film notes (`Film: ... / Rating: ...`), persists to Redis, generates conversational replies. | `meta-llama/llama-4-scout-17b-16e-instruct` (Groq) |
 
-`USE_MOCK_LLM=true` swaps every LLM for a deterministic templated `MockLLM`, so the system runs end-to-end with zero API keys for development. `USE_MOCK_EMBEDDER=true` opts into the hash-based embedder independently — useful on weak hosts where torch is too heavy.
+`USE_MOCK_LLM=true` swaps every LLM for a deterministic templated `MockLLM`, so the system runs end-to-end with zero API keys for development. `USE_MOCK_EMBEDDER=true` opts into the hash-based embedder independently. Useful on weak hosts where torch is too heavy.
 
 ## API
 
@@ -151,14 +151,14 @@ Real spend on the home-server deployment (mock embedder, real LLMs) is **<$10/mo
 - LLM calls flow through `core.config.settings` and the `use_mock_llm` gate. Never construct `ChatGroq` / `ChatGoogleGenerativeAI` directly without checking the flag (see ADR 0003).
 - Logging is `core.logging.get_logger(name)`. No `print()`, no `logging.basicConfig` in agent code.
 - Redis access goes through `core.redis_client.get_redis_sync()` / `get_redis_async()`. Never construct `redis.Redis(...)` inline.
-- Decisions worth recording become numbered ADRs in `docs/decisions/`. Existing ADRs are immutable — supersede or amend with a new ADR that references the old one.
+- Decisions worth recording become numbered ADRs in `docs/decisions/`. Existing ADRs are immutable. Supersede or amend with a new ADR that references the old one.
 
 ## Build phases
 
-1. **Foundation** — `core/`, `agents/base.py`, `pyproject.toml`. **Done.**
-2. **Agents** — migrate Earendil + Tom Bombadil, build Sauron + Finrod. **Done.**
-3. **Unified API** — `api/main.py` + routers + auth. **Done.**
-4. **Infrastructure** — Docker Compose, ingest script, HTTP tests. **Done.**
-5. **Polish** — README, Mermaid, cost model, v1.0.0. **Done.**
+1. **Foundation**: `core/`, `agents/base.py`, `pyproject.toml`. **Done.**
+2. **Agents**: migrate Earendil + Tom Bombadil, build Sauron + Finrod. **Done.**
+3. **Unified API**: `api/main.py` + routers + auth. **Done.**
+4. **Infrastructure**: Docker Compose, ingest script, HTTP tests. **Done.**
+5. **Polish**: README, Mermaid, cost model, v1.0.0. **Done.**
 
 Full scope: [`ARDA_SCOPE.md`](ARDA_SCOPE.md). Decisions: [`docs/decisions/`](docs/decisions/). Cutover runbook: [`docs/cutover.md`](docs/cutover.md).
