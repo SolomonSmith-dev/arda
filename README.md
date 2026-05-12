@@ -1,5 +1,7 @@
 # ARDA
 
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python](https://img.shields.io/badge/python-3.12+-blue.svg) ![Tests](https://img.shields.io/badge/tests-109%20passing-success)
+
 A four-agent system behind one FastAPI entry point. One unified codebase, one HTTP contract, one MCP surface, four named specialists doing the actual work. Tolkien-themed because the routing was getting confusing.
 
 ```mermaid
