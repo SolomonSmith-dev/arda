@@ -58,7 +58,7 @@ def create_job(req: CreateJobRequest) -> dict:
     try:
         next_run = _compute_next_run(req.schedule)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     if req.schedule.kind == "at" and next_run is None:
         raise HTTPException(

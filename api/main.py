@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -48,10 +49,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    try:
+    with contextlib.suppress(Exception):
         await get_redis_async().aclose()
-    except Exception:
-        pass
 
 
 def create_app() -> FastAPI:

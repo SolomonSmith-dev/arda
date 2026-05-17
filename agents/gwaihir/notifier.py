@@ -17,7 +17,7 @@ TELEGRAM_API_BASE = "https://api.telegram.org"
 SEND_TIMEOUT_SECONDS = 10
 
 
-class TelegramNotConfigured(RuntimeError):
+class TelegramNotConfiguredError(RuntimeError):
     """Raised when send_message is called without TELEGRAM_BOT_TOKEN set."""
 
 
@@ -34,12 +34,12 @@ def send_message(
 ) -> dict:
     """POST sendMessage and return the parsed JSON response.
 
-    Raises :class:`TelegramNotConfigured` if no token is available.
+    Raises :class:`TelegramNotConfiguredError` if no token is available.
     Raises :class:`httpx.HTTPStatusError` on non-2xx (e.g. invalid chat_id).
     """
     bot_token = token if token is not None else settings.telegram_bot_token
     if not bot_token:
-        raise TelegramNotConfigured("TELEGRAM_BOT_TOKEN not set")
+        raise TelegramNotConfiguredError("TELEGRAM_BOT_TOKEN not set")
 
     payload = {"chat_id": chat_id, "text": text}
     url = _api_url(bot_token, "sendMessage")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import fakeredis
 import pytest
@@ -55,7 +55,7 @@ def test_create_cron_job_201_with_id_and_next_run(client: TestClient):
 
 
 def test_create_at_in_future_succeeds(client: TestClient):
-    target = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    target = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     resp = client.post(
         "/cron",
         headers=_auth(),
@@ -71,7 +71,7 @@ def test_create_at_in_future_succeeds(client: TestClient):
 
 
 def test_create_at_in_past_returns_400(client: TestClient):
-    target = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    target = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
     resp = client.post(
         "/cron",
         headers=_auth(),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -49,10 +50,8 @@ def handle_query(body: QueryBody) -> dict:
         if body.type == "redis" and body.key:
             value = r.get(body.key)
             if value:
-                try:
+                with contextlib.suppress(json.JSONDecodeError, TypeError):
                     value = json.loads(value)
-                except (json.JSONDecodeError, TypeError):
-                    pass
             return {
                 "type": "redis_lookup",
                 "key": body.key,
@@ -133,4 +132,6 @@ def handle_query(body: QueryBody) -> dict:
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"error": str(e), "type": "query_error"})
+        raise HTTPException(
+            status_code=500, detail={"error": str(e), "type": "query_error"}
+        ) from e

@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 import sqlite3
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -41,7 +41,7 @@ def is_expired(expires_at: str | None) -> bool:
         return False
     try:
         when = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-        return when < datetime.now(timezone.utc)
+        return when < datetime.now(UTC)
     except ValueError:
         return False
 
