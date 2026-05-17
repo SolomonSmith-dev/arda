@@ -25,6 +25,8 @@ class VectorStore(Protocol):
 
     def count(self) -> int: ...
 
+    def delete_by_metadata(self, predicate: dict[str, Any]) -> int: ...
+
 
 def _cosine(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b, strict=True))
@@ -62,6 +64,19 @@ class InMemoryStore:
 
     def count(self) -> int:
         return len(self._items)
+
+    def delete_by_metadata(self, predicate: dict[str, Any]) -> int:
+        """Remove items whose metadata matches every key/value in
+        ``predicate``. Returns the number deleted.
+        """
+        if not predicate:
+            return 0
+        before = len(self._items)
+        self._items = [
+            item for item in self._items
+            if not all(item[3].get(k) == v for k, v in predicate.items())
+        ]
+        return before - len(self._items)
 
 
 class MilvusStore:
@@ -115,6 +130,32 @@ class MilvusStore:
             return int(stats.get("row_count", 0))
         except Exception:
             return 0
+
+    def delete_by_metadata(self, predicate: dict[str, Any]) -> int:
+        """Translate the predicate into a Milvus boolean expression
+        (``k == "v" && ...``) and dispatch through
+        :func:`core.milvus_client.delete_by_expr`. Returns 0 when the
+        predicate is empty (we never delete the whole collection).
+        """
+        from core.milvus_client import delete_by_expr
+
+        if not predicate:
+            return 0
+        clauses: list[str] = []
+        for k, v in predicate.items():
+            if isinstance(v, str):
+                escaped = v.replace('"', '\\"')
+                clauses.append(f'{k} == "{escaped}"')
+            elif isinstance(v, bool):
+                clauses.append(f"{k} == {str(v).lower()}")
+            elif isinstance(v, int | float):
+                clauses.append(f"{k} == {v}")
+            else:
+                continue
+        if not clauses:
+            return 0
+        expr = " && ".join(clauses)
+        return delete_by_expr(self._client, self.collection, expr)
 
 
 def get_store() -> VectorStore:

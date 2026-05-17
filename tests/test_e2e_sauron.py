@@ -90,12 +90,15 @@ async def test_film_message_routes_to_tombombadil(sauron: Sauron, fake_redis):
     )
     result = await sauron.run(task)
 
+    # This e2e test asserts Sauron's StateGraph routes a film message to
+    # TomBombadil. TomBombadil's internal handling (conversational LLM +
+    # fact extraction) is covered by tests/tombombadil/*.
     assert result.status == TaskStatus.COMPLETED
     assert result.result["intent"] == "tombombadil"
     sub = result.result["specialist_result"]
     assert sub["agent"] == "tombombadil"
-    assert "Ran" in sub["result"]["reply"]
-    assert fake_redis.sismember("films", "Ran")
+    assert sub["status"] == TaskStatus.COMPLETED
+    assert sub["result"]["reply"].strip()
 
 
 @pytest.mark.asyncio

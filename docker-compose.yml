@@ -1,0 +1,175 @@
+services:
+  redis:
+    image: redis:7-alpine
+    # Host already runs redis-server on 6379 (legacy Earendil queue).
+    # Publish the new compose-internal Redis on 6380 to avoid collision.
+    # API + worker still talk to it as redis:6379 over the compose network.
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build: .
+    image: arda:0.3.0
+    ports:
+      - "5000:5000"
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      LETTERBOXD_EXPORT_DIR: /app/data/letterboxd
+    volumes:
+      # Drop your unzipped Letterboxd export into ./data/letterboxd/ on the
+      # host (profile.csv, ratings.csv, reviews.csv, watched.csv). Tom
+      # Bombadil merges it into FILM_DATABASE at process start. Read-only
+      # so the container can't mutate the source CSVs.
+      - ./data/letterboxd:/app/data/letterboxd:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  worker:
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.earendil.worker"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  # Galadriel: cron scheduler. Polls cron:queue every 5s and dispatches
+  # due jobs back to the API at /execute/wait. Gated behind profile `cron`
+  # so the default `docker compose up -d` stack only runs API + earendil
+  # worker. Enable with `docker compose --profile cron up -d`.
+  galadriel:
+    profiles: ["cron"]
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.galadriel.worker"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      INTERNAL_API_URL: http://api:5000
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  # Tom Bombadil Discord bot. Disabled by `profile: discord` so a plain
+  # `docker compose up -d` doesn't try to start it without a token. To
+  # enable: set DISCORD_TOKEN in .env, then `docker compose --profile
+  # discord up -d` (or `docker compose up -d tombombadil`).
+  tombombadil:
+    profiles: ["discord"]
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.tombombadil.bot"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      LETTERBOXD_EXPORT_DIR: /app/data/letterboxd
+    volumes:
+      # Same Letterboxd mount as the api service. The Discord bot runs
+      # in its own container with its own FilmKnowledge instance, so it
+      # needs its own access to the export.
+      - ./data/letterboxd:/app/data/letterboxd:ro
+      # identity.yaml maps Discord author IDs to film-club viewers
+      # (Solomon / regulars / strangers). Copy the .example beside it
+      # and fill in real snowflakes. Gitignored on purpose.
+      - ./data/tombombadil:/app/data/tombombadil:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Gwaihir: Telegram long-poll bot. Forwards inbound messages to /execute/wait
+  # after gating by TELEGRAM_ALLOWED_CHAT_IDS. Also serves as the outbound
+  # delivery transport for Galadriel jobs with delivery.mode="telegram".
+  # Gated behind profile `telegram` so a default `docker compose up -d` won't
+  # try to start it without a token. To enable: set TELEGRAM_BOT_TOKEN and
+  # TELEGRAM_ALLOWED_CHAT_IDS in .env, then `docker compose --profile
+  # telegram up -d`.
+  gwaihir:
+    profiles: ["telegram"]
+    image: arda:0.3.0
+    command: ["python", "-m", "agents.gwaihir.bot"]
+    env_file: .env
+    environment:
+      REDIS_HOST: redis
+      INTERNAL_API_URL: http://api:5000
+    depends_on:
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    restart: unless-stopped
+
+  # Milvus standalone (PR 6). Gated behind compose profile "milvus" so
+  # a plain `docker compose up -d` doesn't pull ~2GB of images by
+  # default. Bring up with `docker compose --profile milvus up -d`. The
+  # api / tombombadil containers reach Milvus at MILVUS_HOST=milvus,
+  # MILVUS_PORT=19530. When Milvus is unreachable, Finrod silently
+  # falls back to its in-process InMemoryStore.
+  milvus-etcd:
+    profiles: ["milvus"]
+    image: quay.io/coreos/etcd:v3.5.18
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    volumes:
+      - milvus_etcd:/etcd
+    command: >
+      etcd
+      -advertise-client-urls=http://milvus-etcd:2379
+      -listen-client-urls=http://0.0.0.0:2379
+      --data-dir=/etcd
+    restart: unless-stopped
+
+  milvus-minio:
+    profiles: ["milvus"]
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: minio server /data
+    volumes:
+      - milvus_minio:/data
+    restart: unless-stopped
+
+  milvus:
+    profiles: ["milvus"]
+    image: milvusdb/milvus:v2.5.4
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: milvus-etcd:2379
+      MINIO_ADDRESS: milvus-minio:9000
+    volumes:
+      - milvus_data:/var/lib/milvus
+    ports:
+      - "19530:19530"
+    depends_on:
+      - milvus-etcd
+      - milvus-minio
+    restart: unless-stopped
+
+volumes:
+  milvus_etcd:
+  milvus_minio:
+  milvus_data:

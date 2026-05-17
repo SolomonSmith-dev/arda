@@ -3,12 +3,26 @@
 Loaded on startup to give context about the group's taste.
 Only officially submitted films count toward stats; casually mentioned
 films live in Redis mentions but not here.
+
+If ``LETTERBOXD_EXPORT_DIR`` points at an unzipped Letterboxd export,
+those rows are merged in at construction. See
+:mod:`agents.tombombadil.letterboxd_loader`.
 """
 
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 from typing import Any
+
+from agents.tombombadil.letterboxd_loader import (
+    load_letterboxd_export,
+    merge_into_film_database,
+)
+from core.logging import get_logger
+
+log = get_logger("agents.tombombadil.film_knowledge")
 
 FILM_DATABASE = {
     "films": [
@@ -63,10 +77,12 @@ FILM_DATABASE = {
             "style": "Direct, emotional, focused on character over spectacle",
             "films_watched": ["Ran", "La Haine", "Ghost Dog"],
         },
+        # Collapsed from a duplicate dict-literal key per ADR 0002.
+        # "Engaged, emotional reactions" wins (was the second-key value).
         "Isis": {
             "avg_rating": 8.5,
             "preferred_themes": ["beauty in chaos", "brotherhood", "moral ambiguity"],
-            "style": "Poetic, visual, finds grace in tragedy",
+            "style": "Engaged, emotional reactions, partner of Solomon",
             "films_watched": ["Ran", "La Haine"],
         },
         "Anthony Taylor": {
@@ -87,21 +103,39 @@ FILM_DATABASE = {
             "style": "Casual, observational, appreciates visual moments",
             "films_watched": ["Ghost Dog"],
         },
-        "Isis": {  # noqa: F601 -- duplicate key in original; second wins, see ADR 0002
-            "avg_rating": 8.5,
-            "preferred_themes": ["beauty in chaos", "brotherhood", "moral ambiguity"],
-            "style": "Engaged, emotional reactions, partner of Solomon",
-            "films_watched": ["Ran", "La Haine"],
-        },
     },
 }
 
 
 class FilmKnowledge:
-    def __init__(self, redis_client=None):
+    def __init__(self, redis_client=None, letterboxd_dir: Path | str | None = None):
         self.redis = redis_client
-        self.films = FILM_DATABASE["films"]
-        self.people = FILM_DATABASE["people"]
+
+        if letterboxd_dir is None:
+            env = os.environ.get("LETTERBOXD_EXPORT_DIR")
+            if env:
+                letterboxd_dir = env
+
+        merged = FILM_DATABASE
+        if letterboxd_dir:
+            path = Path(letterboxd_dir)
+            if path.is_dir():
+                try:
+                    viewer_name = os.environ.get("LETTERBOXD_VIEWER_NAME") or None
+                    export = load_letterboxd_export(path, viewer_name=viewer_name)
+                    merged = merge_into_film_database(FILM_DATABASE, export)
+                    log.info(
+                        "letterboxd_merged",
+                        films=len(merged["films"]),
+                        people=len(merged["people"]),
+                    )
+                except Exception as e:
+                    log.error("letterboxd_load_failed", path=str(path), exc=str(e))
+            else:
+                log.warning("letterboxd_dir_missing", path=str(path))
+
+        self.films = merged["films"]
+        self.people = merged["people"]
 
         if self.redis:
             self._load_to_redis()
@@ -141,6 +175,60 @@ class FilmKnowledge:
 
         return best
 
+    def _resolve_person_key(self, name: str) -> str | None:
+        """Return the canonical ``self.people`` key matching ``name``,
+        case-insensitively. Returns ``None`` if no match.
+        """
+        if not name:
+            return None
+        if name in self.people:
+            return name
+        target = name.lower()
+        for key in self.people:
+            if key.lower() == target:
+                return key
+        return None
+
+    def get_user_summary(self, name: str, recent_limit: int = 30) -> str | None:
+        """Compact summary for the LLM system prompt: favorites + recent rated.
+
+        Returns ``None`` if the user isn't in ``self.people``. Callers
+        decide what to render for unknown viewers (see
+        :mod:`agents.tombombadil.agent` for the stranger fallback).
+        """
+        key = self._resolve_person_key(name)
+        if key is None:
+            return None
+        person = self.people[key]
+
+        favorites = [
+            f["title"]
+            for f in self.films
+            if any(
+                (w.get("name") or "").lower() == key.lower()
+                and (w.get("rating") or 0) >= 9
+                for w in f.get("watchers", [])
+            )
+        ]
+
+        rated_by_user: list[tuple[str, float]] = []
+        for f in self.films:
+            for w in f.get("watchers", []):
+                if (w.get("name") or "").lower() == key.lower() and w.get("rating") is not None:
+                    rated_by_user.append((f["title"], float(w["rating"])))
+        rated_by_user.sort(key=lambda x: -x[1])
+
+        lines = [f"Viewer: {key} (avg {person.get('avg_rating', 0)})"]
+        if favorites[:8]:
+            lines.append("Top-rated: " + ", ".join(favorites[:8]))
+        if rated_by_user:
+            top = rated_by_user[:recent_limit]
+            lines.append(
+                "Recent ratings: "
+                + ", ".join(f"{t} ({r:g}/10)" for t, r in top)
+            )
+        return "\n".join(lines)
+
     def get_context_summary(self) -> str:
         summaries = []
         for film in self.films:
@@ -154,20 +242,44 @@ class FilmKnowledge:
         return "Films watched by the group:\n" + "\n".join(summaries)
 
     def recommend_for_person(self, name: str) -> str | None:
-        person = self.get_person_profile(name)
-        if not person:
+        key = self._resolve_person_key(name)
+        if key is None:
             return None
+        person = self.people[key]
 
-        suggestion = self.suggest_for_person(name)
-        if not suggestion:
-            return f"I don't have enough data yet to recommend something for {name}."
+        suggestion = self.suggest_for_person(key)
+        if suggestion:
+            themes = ", ".join(suggestion["themes"][:3])
+            response = f"**For {key}:**\n"
+            response += f"I'd recommend **{suggestion['title']}** ({suggestion['year']})\n"
+            response += f"**Why?** You tend to go for films about {themes}. {suggestion['title']} is all about that.\n"
+            response += f"**Quick take:** {suggestion['group_consensus']}"
+            return response
 
-        themes = ", ".join(suggestion["themes"][:3])
-        response = f"**For {name}:**\n"
-        response += f"I'd recommend **{suggestion['title']}** ({suggestion['year']})\n"
-        response += f"**Why?** You tend to go for films about {themes}. {suggestion['title']} is all about that.\n"
-        response += f"**Quick take:** {suggestion['group_consensus']}"
-        return response
+        # Fall-through: every catalog film with themes has been watched
+        # by this viewer. Surface their highest-rated history as social
+        # proof rather than refusing.
+        rated = [
+            (f["title"], f.get("year"), float(w["rating"]))
+            for f in self.films
+            for w in f.get("watchers", [])
+            if (w.get("name") or "").lower() == key.lower() and w.get("rating") is not None
+        ]
+        rated.sort(key=lambda x: -x[2])
+        if not rated:
+            return f"I don't have enough data yet to recommend something for {key}."
+
+        favorites = ", ".join(
+            f"**{t}**{f' ({y})' if y else ''} ({r:g}/10)"
+            for t, y, r in rated[:5]
+        )
+        themes = ", ".join(person.get("preferred_themes") or [])
+        return (
+            f"**For {key}:** you've already watched every themed film in the "
+            "catalog, so I don't have an unwatched suggestion. Your top picks "
+            f"so far -- {favorites}. Lean into "
+            f"{themes or 'whatever feels right tonight'}."
+        )
 
     def answer_about_film(self, question: str) -> str | None:
         question_lower = question.lower()
