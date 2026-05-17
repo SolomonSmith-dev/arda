@@ -1,6 +1,18 @@
 """Shared fixtures for Tom Bombadil integration tests."""
+# ruff: noqa: E402
+# This conftest intentionally clears LETTERBOXD_EXPORT_DIR *before* the
+# first-party imports below. `agents.tombombadil.agent` constructs a
+# module-level `FilmKnowledge()` at import time, and FilmKnowledge reads
+# LETTERBOXD_EXPORT_DIR in __init__ -- so a dev environment with that var
+# set would merge CSVs from disk before any fixture (function- or
+# module-scoped) could intervene. The original value is restored after
+# the session by the autouse `_letterboxd_export_dir_isolation` fixture.
 
 from __future__ import annotations
+
+import os
+
+_SAVED_LETTERBOXD_EXPORT_DIR = os.environ.pop("LETTERBOXD_EXPORT_DIR", None)
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -81,14 +93,16 @@ def stub_long_term_memory(monkeypatch, request):
     monkeypatch.setattr(memory, "remember_fact", _no_op)
 
 
-@pytest.fixture(autouse=True)
-def _isolate_letterboxd_export_dir(monkeypatch):
-    """A dev environment with LETTERBOXD_EXPORT_DIR set would cause
-    every FilmKnowledge() construction (e.g., the ``knowledge`` fixture)
-    to parse CSVs from disk. Clear it for the duration of every test
-    so the integration suite is hermetic.
+@pytest.fixture(scope="session", autouse=True)
+def _letterboxd_export_dir_isolation():
+    """LETTERBOXD_EXPORT_DIR is cleared at conftest import time (see the
+    module header) so it never leaks into import-time or module-scoped
+    FilmKnowledge() construction. This session-scoped fixture is the
+    matching teardown: restore the dev's original value after the run.
     """
-    monkeypatch.delenv("LETTERBOXD_EXPORT_DIR", raising=False)
+    yield
+    if _SAVED_LETTERBOXD_EXPORT_DIR is not None:
+        os.environ["LETTERBOXD_EXPORT_DIR"] = _SAVED_LETTERBOXD_EXPORT_DIR
 
 
 @pytest.fixture
