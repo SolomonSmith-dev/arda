@@ -90,12 +90,15 @@ async def test_film_message_routes_to_tombombadil(sauron: Sauron, fake_redis):
     )
     result = await sauron.run(task)
 
+    # This e2e test asserts Sauron's StateGraph routes a film message to
+    # TomBombadil. TomBombadil's internal handling (conversational LLM +
+    # fact extraction) is covered by tests/tombombadil/*.
     assert result.status == TaskStatus.COMPLETED
     assert result.result["intent"] == "tombombadil"
     sub = result.result["specialist_result"]
     assert sub["agent"] == "tombombadil"
-    assert "Ran" in sub["result"]["reply"]
-    assert fake_redis.sismember("films", "Ran")
+    assert sub["status"] == TaskStatus.COMPLETED
+    assert sub["result"]["reply"].strip()
 
 
 @pytest.mark.asyncio
@@ -110,3 +113,36 @@ async def test_chat_message_routes_to_tombombadil_via_llm(sauron: Sauron):
     assert result.status == TaskStatus.COMPLETED
     sub = result.result["specialist_result"]
     assert "[mock:" in sub["result"]["reply"]
+
+
+@pytest.mark.asyncio
+async def test_thread_id_persists_messages_across_turns(sauron: Sauron):
+    """Two Sauron.run() calls on the same thread_id share message history
+    via the LangGraph checkpointer (MemorySaver in tests)."""
+    thread_id = "user-session-1"
+
+    t1 = AgentTask(
+        agent="sauron",
+        type="execute",
+        payload={"message": "uptime", "thread_id": thread_id},
+    )
+    await sauron.run(t1)
+
+    cfg = {"configurable": {"thread_id": thread_id}}
+    snapshot1 = await sauron._graph.aget_state(cfg)
+    msgs1 = snapshot1.values["messages"]
+
+    t2 = AgentTask(
+        agent="sauron",
+        type="execute",
+        payload={"message": "ls", "thread_id": thread_id},
+    )
+    await sauron.run(t2)
+
+    snapshot2 = await sauron._graph.aget_state(cfg)
+    msgs2 = snapshot2.values["messages"]
+
+    assert len(msgs2) > len(msgs1), "checkpointer should retain turn-1 messages"
+    assert any(
+        m["role"] == "user" and m["content"] == "uptime" for m in msgs2
+    ), "turn-1 user message should still be in history"

@@ -20,12 +20,14 @@ dependencies = [
     "redis[hiredis]>=5.0",
 
     # LLM frameworks
+    "anthropic>=0.40",
     "langchain>=0.3",
     "langchain-core>=0.3",
     "langchain-google-genai>=2.0",
     "langchain-groq>=0.2",
     "langchain-anthropic>=0.3",
     "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=2.0",
 
     # MCP
     "mcp[cli]>=1.0",
