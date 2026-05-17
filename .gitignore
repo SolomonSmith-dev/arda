@@ -47,6 +47,8 @@ data/tombombadil/identity.yaml
 volumes/
 milvus_data/
 redis_data/
+# Sauron LangGraph checkpointer DB (runtime state, never committed).
+.arda/
 
 # Stray dir from tool that did not expand ~ (safe to delete manually)
 /~/
