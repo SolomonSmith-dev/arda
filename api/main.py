@@ -28,6 +28,27 @@ API_TITLE = "ARDA"
 API_VERSION = "0.3.0"
 
 
+async def _make_checkpointer(stack: AsyncExitStack):
+    """Sauron's LangGraph checkpointer.
+
+    Dev/test (mock LLM) uses an in-process MemorySaver so the test
+    suite stays file-free and fast. Production gets a durable
+    AsyncSqliteSaver so Sauron's thread_id cross-turn memory actually
+    survives restarts. The saver's lifetime is bound to `stack` (the
+    app lifespan's AsyncExitStack).
+    """
+    if settings.use_mock_llm:
+        return MemorySaver()
+
+    db_path = Path(settings.checkpointer_db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpointer = await stack.enter_async_context(
+        AsyncSqliteSaver.from_conn_string(str(db_path))
+    )
+    await checkpointer.setup()
+    return checkpointer
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
@@ -37,19 +58,7 @@ async def lifespan(app: FastAPI):
         log.warning("redis_unreachable", exception=str(e))
 
     async with AsyncExitStack() as stack:
-        # Dev/test (mock LLM) uses an in-process MemorySaver so the test
-        # suite stays file-free and fast. Production gets a durable
-        # AsyncSqliteSaver so Sauron's thread_id cross-turn memory
-        # actually survives restarts.
-        if settings.use_mock_llm:
-            checkpointer = MemorySaver()
-        else:
-            db_path = Path(settings.checkpointer_db_path)
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            checkpointer = await stack.enter_async_context(
-                AsyncSqliteSaver.from_conn_string(str(db_path))
-            )
-            await checkpointer.setup()
+        checkpointer = await _make_checkpointer(stack)
 
         earendil = Earendil()
         finrod = Finrod()
