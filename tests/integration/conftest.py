@@ -1,12 +1,27 @@
 """Shared fixtures for Tom Bombadil integration tests."""
+# ruff: noqa: E402
+# This conftest intentionally clears LETTERBOXD_EXPORT_DIR *before* the
+# first-party imports below. `agents.tombombadil.agent` constructs a
+# module-level `FilmKnowledge()` at import time, and FilmKnowledge reads
+# LETTERBOXD_EXPORT_DIR in __init__ -- so a dev environment with that var
+# set would merge CSVs from disk before any fixture (function- or
+# module-scoped) could intervene. The original value is restored after
+# the session by the autouse `_letterboxd_export_dir_isolation` fixture.
 
 from __future__ import annotations
 
+import os
+
+_SAVED_LETTERBOXD_EXPORT_DIR = os.environ.pop("LETTERBOXD_EXPORT_DIR", None)
+
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import fakeredis
 import pytest
 
+from agents._mock_llm import _MockResponse
 from agents.finrod.agent import Finrod
 from agents.finrod.embeddings import MockEmbedder
 from agents.finrod.store import InMemoryStore
@@ -76,6 +91,18 @@ def stub_long_term_memory(monkeypatch, request):
 
     monkeypatch.setattr(memory, "recall_facts", _no_facts)
     monkeypatch.setattr(memory, "remember_fact", _no_op)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _letterboxd_export_dir_isolation():
+    """LETTERBOXD_EXPORT_DIR is cleared at conftest import time (see the
+    module header) so it never leaks into import-time or module-scoped
+    FilmKnowledge() construction. This session-scoped fixture is the
+    matching teardown: restore the dev's original value after the run.
+    """
+    yield
+    if _SAVED_LETTERBOXD_EXPORT_DIR is not None:
+        os.environ["LETTERBOXD_EXPORT_DIR"] = _SAVED_LETTERBOXD_EXPORT_DIR
 
 
 @pytest.fixture
@@ -165,11 +192,33 @@ def make_interaction(user: FakeUser, channel: FakeChannel) -> FakeInteraction:
 # Module-level helper reused across test modules.
 async def _send_mention(channel, user, text, *, bot_user):
     """Build a mention message addressed to Tom and drive on_message."""
-    from agents.tombombadil import bot as tom_bot
     content = f"<@{bot_user.id}> {text}"
     msg = make_message(user, channel, content, mentions=[bot_user])
     await tom_bot.on_message(msg)
     return msg
+
+
+@contextmanager
+def capture_system_prompt():
+    """Patch tom_agent._llm.invoke to capture the joined SystemMessage
+    contents. Yields a dict that gets a ``sys`` key populated after the
+    next ``get_response`` / ``on_message`` call.
+
+    Use:
+        with capture_system_prompt() as cap:
+            await tom_agent.get_response(...)
+        assert "..." in cap["sys"]
+    """
+    captured: dict = {}
+
+    def _fake(messages):
+        captured["sys"] = "\n".join(
+            m.content for m in messages if m.__class__.__name__ == "SystemMessage"
+        )
+        return _MockResponse(content="ok")
+
+    with patch.object(tom_agent._llm, "invoke", side_effect=_fake):
+        yield captured
 
 
 SAMPLE_LETTERBOXD_FEED = """<?xml version="1.0" encoding="UTF-8"?>

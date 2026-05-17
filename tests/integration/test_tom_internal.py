@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import memory
 from agents.tombombadil.identity import resolve as resolve_viewer
+from tests.integration.conftest import capture_system_prompt
 
 
 @pytest.mark.asyncio
@@ -67,16 +66,8 @@ async def test_suppress_films_pref_swaps_film_block(
     'has asked you NOT to bring up films' line in the system prompt."""
     viewer = resolve_viewer(str(brian.id), str(brian))
     memory.set_pref(fake_redis, viewer.discord_id, "suppress_films", "1")
-    captured: dict = {}
 
-    def fake_invoke(messages):
-        captured["sys"] = "\n".join(
-            m.content for m in messages if m.__class__.__name__ == "SystemMessage"
-        )
-        from agents._mock_llm import _MockResponse
-        return _MockResponse(content="ok")
-
-    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+    with capture_system_prompt() as captured:
         await tom_agent.get_response(
             f"tom:hist:ch:{guild_channel.id}", "hi", viewer, fake_redis
         )
@@ -107,16 +98,8 @@ async def test_roster_block_lists_all_film_db_people(
     so Tom can answer cross-user questions (e.g. 'how did Anthony rate?')
     without inventing data."""
     viewer = resolve_viewer(str(solomon.id), str(solomon))
-    captured: dict = {}
 
-    def fake_invoke(messages):
-        captured["sys"] = "\n".join(
-            m.content for m in messages if m.__class__.__name__ == "SystemMessage"
-        )
-        from agents._mock_llm import _MockResponse
-        return _MockResponse(content="ok")
-
-    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+    with capture_system_prompt() as captured:
         await tom_agent.get_response("tom:hist:ch:99", "hi", viewer, fake_redis)
     for name in ("Solomon Smith", "Anthony Taylor", "Brian", "Gavin", "Isis", "G"):
         assert name in captured["sys"]

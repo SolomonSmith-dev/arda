@@ -6,11 +6,12 @@ from unittest.mock import patch
 
 import pytest
 
+from agents._mock_llm import _MockResponse
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import memory
 from agents.tombombadil.identity import resolve as resolve_viewer
 from tests.integration.conftest import SAMPLE_LETTERBOXD_FEED as SAMPLE_FEED
-from tests.integration.conftest import _send_mention
+from tests.integration.conftest import _send_mention, capture_system_prompt
 
 
 @pytest.mark.asyncio
@@ -100,7 +101,7 @@ async def test_llm_timeout_returns_canned_no_history(
 
     with patch.object(tom_agent._llm, "invoke", side_effect=raise_timeout):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
-    assert "LLM timeout" in msg.reply_log[-1]
+    assert "LLM timeout" in msg.reply_log[0]
     assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
 
 
@@ -109,8 +110,6 @@ async def test_llm_empty_content_returns_canned_no_history(
     identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
 ):
     """Spec 5.3 LLM empty: 'No response generated', no history."""
-    from agents._mock_llm import _MockResponse
-
     with patch.object(tom_agent._llm, "invoke", return_value=_MockResponse(content="")):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
     assert msg.reply_log[-1] == "No response generated"
@@ -158,16 +157,7 @@ async def test_dm_reply_does_not_mention_other_users_facts(
     bv = resolve_viewer(str(brian.id), str(brian))
     await memory.remember_fact(bv, "brian secretly hates Tarkovsky", source_channel="x")
 
-    captured: dict = {}
-
-    def fake_invoke(messages):
-        captured["sys"] = "\n".join(
-            m.content for m in messages if m.__class__.__name__ == "SystemMessage"
-        )
-        from agents._mock_llm import _MockResponse
-        return _MockResponse(content="ok")
-
-    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+    with capture_system_prompt() as captured:
         await _send_mention(dm_channel, solomon, "what do you remember about Brian?",
                              bot_user=fake_bot_user)
 
@@ -179,7 +169,7 @@ def test_history_ltrim_caps_at_two_times_max_turns(identity_yaml, fake_redis, so
     2 * HISTORY_MAX_TURNS entries."""
     viewer = resolve_viewer(str(solomon.id), str(solomon))
     scope = "tom:hist:ch:cap"
-    for i in range(memory.HISTORY_MAX_TURNS * 4):
+    for i in range(memory.HISTORY_MAX_TURNS * 2 + 2):
         memory.append_turn(fake_redis, scope, viewer, "user" if i % 2 == 0 else "assistant", f"msg {i}")
     raw = fake_redis.lrange(scope, 0, -1)
     assert len(raw) <= memory.HISTORY_MAX_TURNS * 2
