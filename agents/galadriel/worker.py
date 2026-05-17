@@ -70,12 +70,12 @@ def announce(job: Job, result: dict) -> None:
         return
 
     if job.delivery.mode == "telegram":
-        from agents.gwaihir.notifier import TelegramNotConfigured, send_message
+        from agents.gwaihir.notifier import TelegramNotConfiguredError, send_message
 
         text = _format_announcement(job, result)
         try:
             send_message(job.delivery.to, text)
-        except TelegramNotConfigured:
+        except TelegramNotConfiguredError:
             log.warning(
                 "telegram_not_configured",
                 job_id=job.id,

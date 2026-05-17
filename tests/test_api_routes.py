@@ -245,3 +245,48 @@ def test_memory_ingest_then_query(client: TestClient):
     body = q.json()
     assert body["status"] == "completed"
     assert "answer" in body["result"]
+
+
+# --- Sauron checkpointer wiring (api.main._make_checkpointer) -------------
+
+
+@pytest.mark.asyncio
+async def test_dev_uses_in_process_memory_checkpointer(monkeypatch):
+    from contextlib import AsyncExitStack
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from api import main as api_main
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "use_mock_llm", True)
+
+    async with AsyncExitStack() as stack:
+        cp = await api_main._make_checkpointer(stack)
+
+    assert isinstance(cp, MemorySaver)
+
+
+@pytest.mark.asyncio
+async def test_production_uses_durable_sqlite_checkpointer(tmp_path, monkeypatch):
+    """The PR's core behavior change: when not in mock mode the API must
+    wire Sauron to a durable on-disk AsyncSqliteSaver so thread_id memory
+    survives restarts. No real LLM creds are needed -- only the
+    checkpointer branch is exercised here."""
+    from contextlib import AsyncExitStack
+
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+    from api import main as api_main
+    from core.config import settings
+
+    db = tmp_path / "checkpoints.sqlite"
+    monkeypatch.setattr(settings, "use_mock_llm", False)
+    monkeypatch.setattr(settings, "checkpointer_db_path", str(db))
+
+    async with AsyncExitStack() as stack:
+        cp = await api_main._make_checkpointer(stack)
+
+        assert isinstance(cp, AsyncSqliteSaver)
+        assert db.exists(), "AsyncSqliteSaver.setup() should create the DB file"
+        assert db.stat().st_size > 0

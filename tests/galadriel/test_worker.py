@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock
+from datetime import UTC, datetime, timedelta
 
 import fakeredis
 import httpx
@@ -33,7 +32,7 @@ def _cron_job(**overrides) -> Job:
 
 
 def _at_job(**overrides) -> Job:
-    future_iso = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    future_iso = (datetime.now(UTC) + timedelta(hours=1)).isoformat()
     base = dict(
         id="one-shot-1",
         name="one-shot",
@@ -42,7 +41,7 @@ def _at_job(**overrides) -> Job:
         delivery=JobDelivery(),
         created_at_ms=0,
         updated_at_ms=0,
-        next_run_at_ms=int(datetime.now(timezone.utc).timestamp() * 1000) - 1,
+        next_run_at_ms=int(datetime.now(UTC).timestamp() * 1000) - 1,
     )
     base.update(overrides)
     return Job(**base)
@@ -183,12 +182,12 @@ def test_announce_telegram_swallows_send_errors(monkeypatch):
 
 
 def test_announce_telegram_swallows_not_configured(monkeypatch):
-    from agents.gwaihir.notifier import TelegramNotConfigured
+    from agents.gwaihir.notifier import TelegramNotConfiguredError
 
     job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
 
     def not_configured(*a, **kw):
-        raise TelegramNotConfigured("no token")
+        raise TelegramNotConfiguredError("no token")
 
     monkeypatch.setattr("agents.gwaihir.notifier.send_message", not_configured)
 

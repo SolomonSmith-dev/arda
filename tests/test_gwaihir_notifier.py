@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from agents.gwaihir.notifier import TelegramNotConfigured, send_message
+from agents.gwaihir.notifier import TelegramNotConfiguredError, send_message
 
 
 def _client_capturing(captured: dict, response_body: dict | None = None) -> httpx.Client:
@@ -31,7 +31,7 @@ def test_send_message_posts_to_correct_url_and_payload():
 
 def test_send_message_raises_when_no_token(monkeypatch):
     monkeypatch.setattr("agents.gwaihir.notifier.settings.telegram_bot_token", "")
-    with pytest.raises(TelegramNotConfigured):
+    with pytest.raises(TelegramNotConfiguredError):
         send_message(1, "x")
 
 

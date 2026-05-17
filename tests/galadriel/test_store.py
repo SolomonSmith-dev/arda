@@ -103,7 +103,7 @@ def test_pop_due_removes_claimed_from_queue(r):
 def test_pop_due_skips_disabled_jobs(r):
     job = _make_job("a", next_run_at_ms=1_000).model_copy(update={"enabled": False})
     # Force into queue manually since save_job() would skip it
-    r.set(f"cron:job:a", job.model_dump_json())
+    r.set("cron:job:a", job.model_dump_json())
     r.zadd(QUEUE_KEY, {"a": 1_000})
 
     claimed = pop_due(r, now_ms=2_000)
