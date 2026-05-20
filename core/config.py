@@ -62,10 +62,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids: str = ""
 
-    # Earendil mac mini -- the host that runs the API. Name is historical;
-    # ARDA_API_KEY is the canonical auth secret (same key is used by the
-    # MCP client and server).
-    earendil_host: str = "http://100.112.3.116:5000"
+    # Base URL of the unified ARDA API. The MCP server (mcp_server/server.py)
+    # talks to it over HTTP; agents and routes share the same key in
+    # `arda_api_key` for the `x-api-key` header.
+    arda_api_url: str = "http://localhost:5000"
 
     # Galadriel worker calls the API back via this URL. Defaults to the
     # docker-compose service name; set INTERNAL_API_URL=http://localhost:5000
