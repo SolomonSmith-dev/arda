@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agents._mock_llm import _MockResponse
+from agents._anthropic_mock import MockMessage, TextBlock
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import memory
 from agents.tombombadil.identity import resolve as resolve_viewer
@@ -96,10 +96,10 @@ async def test_llm_timeout_returns_canned_no_history(
 ):
     """Spec 5.3 LLM timeout: returns 'LLM timeout, try again' and writes
     NO history (so retries don't accumulate phantom turns)."""
-    def raise_timeout(*_a, **_k):
+    async def raise_timeout(*_a, **_k):
         raise TimeoutError("simulated")
 
-    with patch.object(tom_agent._llm, "invoke", side_effect=raise_timeout):
+    with patch.object(tom_agent._llm.messages, "create", side_effect=raise_timeout):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
     assert "LLM timeout" in msg.reply_log[0]
     assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
@@ -110,7 +110,10 @@ async def test_llm_empty_content_returns_canned_no_history(
     identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
 ):
     """Spec 5.3 LLM empty: 'No response generated', no history."""
-    with patch.object(tom_agent._llm, "invoke", return_value=_MockResponse(content="")):
+    async def empty_response(*_a, **_k):
+        return MockMessage(content=[TextBlock(text="")], stop_reason="end_turn")
+
+    with patch.object(tom_agent._llm.messages, "create", side_effect=empty_response):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
     assert msg.reply_log[-1] == "No response generated"
     assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
@@ -121,7 +124,10 @@ async def test_llm_arbitrary_exception_returns_canned(
     identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
 ):
     """Spec 5.3 LLM crash: 'Error processing your request', no history."""
-    with patch.object(tom_agent._llm, "invoke", side_effect=RuntimeError("boom")):
+    async def raise_boom(*_a, **_k):
+        raise RuntimeError("boom")
+
+    with patch.object(tom_agent._llm.messages, "create", side_effect=raise_boom):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
     assert "Error processing" in msg.reply_log[-1]
     assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []

@@ -5,6 +5,7 @@ from unittest.mock import patch
 import fakeredis
 import pytest
 
+from agents._anthropic_mock import MockMessage, TextBlock
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import memory as tom_memory
 from agents.tombombadil.identity import Tier, Viewer
@@ -51,6 +52,18 @@ def stub_long_term_memory(monkeypatch):
     monkeypatch.setattr(tom_memory, "remember_fact", _no_op)
 
 
+def _capture_create(captured: dict):
+    """Return an async fake for ``client.messages.create`` that captures
+    the system / messages args and replies with a deterministic stub."""
+
+    async def _fake(*, system, messages, **_kwargs):
+        captured["system"] = system
+        captured["messages"] = messages
+        return MockMessage(content=[TextBlock(text="[mock] reply")], stop_reason="end_turn")
+
+    return _fake
+
+
 @pytest.mark.asyncio
 async def test_get_response_uses_mock_llm(fake_redis):
     reply = await tom_agent.get_response("tom:hist:ch:1", "Tell me about Ran", SOLOMON, fake_redis)
@@ -67,16 +80,10 @@ async def test_get_response_empty_input(fake_redis):
 @pytest.mark.asyncio
 async def test_stranger_prompt_excludes_solomon_film_summary(fake_redis):
     captured: dict = {}
-
-    def fake_invoke(messages):
-        captured["messages"] = messages
-        from agents._mock_llm import _MockResponse
-        return _MockResponse(content="[mock] reply")
-
-    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+    with patch.object(tom_agent._llm.messages, "create", side_effect=_capture_create(captured)):
         await tom_agent.get_response("tom:hist:ch:1", "Hi", STRANGER, fake_redis)
 
-    system_text = "\n".join(m.content for m in captured["messages"] if hasattr(m, "content") and m.__class__.__name__ == "SystemMessage")
+    system_text = captured["system"]
     assert "Solomon Smith" not in system_text or "no film history yet" in system_text.lower()
     # Stranger fallback line must be present
     assert "no film history yet" in system_text.lower()
@@ -86,17 +93,10 @@ async def test_stranger_prompt_excludes_solomon_film_summary(fake_redis):
 async def test_suppress_films_pref_swaps_film_block(fake_redis):
     tom_memory.set_pref(fake_redis, BRIAN.discord_id, "suppress_films", "1")
     captured: dict = {}
-
-    def fake_invoke(messages):
-        captured["messages"] = messages
-        from agents._mock_llm import _MockResponse
-        return _MockResponse(content="[mock] reply")
-
-    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+    with patch.object(tom_agent._llm.messages, "create", side_effect=_capture_create(captured)):
         await tom_agent.get_response("tom:hist:ch:1", "hi", BRIAN, fake_redis)
 
-    system_text = "\n".join(m.content for m in captured["messages"] if m.__class__.__name__ == "SystemMessage")
-    assert "asked you NOT to bring up films unprompted" in system_text
+    assert "asked you NOT to bring up films unprompted" in captured["system"]
 
 
 @pytest.mark.asyncio
@@ -114,17 +114,11 @@ async def test_history_included_in_second_turn(fake_redis):
     await tom_agent.get_response("tom:hist:ch:99", "first message", SOLOMON, fake_redis)
 
     captured: dict = {}
-
-    def fake_invoke(messages):
-        captured["messages"] = messages
-        from agents._mock_llm import _MockResponse
-        return _MockResponse(content="[mock] reply")
-
-    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+    with patch.object(tom_agent._llm.messages, "create", side_effect=_capture_create(captured)):
         await tom_agent.get_response("tom:hist:ch:99", "second message", SOLOMON, fake_redis)
 
     # Inspect content for the first-turn user message + reply.
-    user_contents = [m.content for m in captured["messages"] if m.__class__.__name__ == "HumanMessage"]
+    user_contents = [m["content"] for m in captured["messages"] if m["role"] == "user"]
     assert any("first message" in c for c in user_contents)
     assert user_contents[-1] == "second message"
 

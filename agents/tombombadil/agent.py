@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-from typing import ClassVar
-
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from typing import Any, ClassVar
 
 from agents.base import BaseAgent
 from agents.conduct import CONDUCT_PROMPT
@@ -13,6 +10,8 @@ from agents.tombombadil.fact_extractor import extract as extract_facts
 from agents.tombombadil.film_knowledge import FilmKnowledge
 from agents.tombombadil.identity import Tier, Viewer, all_known
 from agents.tombombadil.identity import resolve as resolve_viewer
+from agents.tombombadil.llm import build_chat_client
+from core.config import Tier as ConfigTier
 from core.config import settings
 from core.logging import get_logger
 from core.models import AgentResult, AgentTask, TaskStatus
@@ -20,34 +19,26 @@ from core.redis_client import get_redis_sync
 
 log = get_logger("agents.tombombadil.agent")
 
-
-def _build_llm():
-    if settings.use_mock_llm:
-        from agents._mock_llm import MockLLM
-        return MockLLM(model=settings.specialist_model)
-    from langchain_groq import ChatGroq
-    return ChatGroq(
-        model=settings.specialist_model,
-        api_key=settings.groq_api_key,
-        temperature=0.7,
-    )
+MAX_REPLY_TOKENS = 1024
+LLM_TIMEOUT_SECONDS = 30
 
 
-_llm = _build_llm()
+_llm = build_chat_client()
 _film_knowledge = FilmKnowledge()
 
 
 _SELF_DESCRIPTION = (
     "You are Tom Bombadil, a specialist agent in the ARDA stack.\n"
-    "- Sauron (Gemini-backed) is the orchestrator that routes messages by intent.\n"
+    "- Sauron (Claude-backed, LangGraph + native tool_use) is the orchestrator "
+    "that routes messages by intent.\n"
     "- You handle film and club topics.\n"
-    "- Finrod provides long-term retrieval via sentence-transformers embeddings\n"
-    "  over a vector store (in-memory today; Milvus standalone is planned).\n"
+    "- Finrod provides long-term retrieval via LlamaIndex-backed RAG\n"
+    "  (in-memory by default; Milvus available under the `[full]` extra).\n"
     "- Galadriel runs cron jobs and watch-party reminders.\n"
     "- Gwaihir is the Telegram bot for ops messages.\n"
     "- You run in Docker on a Linux home server, share Redis with the rest of\n"
-    "  the stack, reply via discord.py, and use the Groq-hosted "
-    f"{settings.specialist_model} model.\n"
+    "  the stack, reply via discord.py, and use Claude Haiku via the anthropic\n"
+    f"  SDK directly (model: {settings.specialist_model}).\n"
     "When asked about your architecture, answer with these specifics, not\n"
     "generic AI-101."
 )
@@ -142,11 +133,14 @@ def _recalled_block(facts: list[str]) -> str | None:
     )
 
 
-def _build_system_messages(
+def _build_system_prompt(
     viewer: Viewer,
     prefs: dict[str, str],
     recalled_facts: list[str],
-) -> list[SystemMessage]:
+) -> str:
+    """Concatenate every system-level instruction into a single string
+    for Anthropic's top-level ``system`` parameter. Blocks are joined
+    by blank lines so the model sees them as discrete sections."""
     blocks: list[str] = [
         CONDUCT_PROMPT,
         _SELF_DESCRIPTION,
@@ -165,11 +159,12 @@ def _build_system_messages(
     recalled = _recalled_block(recalled_facts)
     if recalled:
         blocks.append(recalled)
-    return [SystemMessage(content=b) for b in blocks]
+    return "\n\n".join(blocks)
 
 
-def _history_messages(turns: list[memory.Turn]) -> list:
-    """Render persisted turns as LangChain messages.
+def _history_messages(turns: list[memory.Turn]) -> list[dict[str, Any]]:
+    """Render persisted turns as Anthropic-shaped messages
+    (``{role, content}`` dicts).
 
     Only USER turns get the ``[viewer] ...`` speaker prefix -- the LLM
     needs that to disambiguate who said what in multi-user channels.
@@ -178,14 +173,33 @@ def _history_messages(turns: list[memory.Turn]) -> list:
     shape on the next response (live regression: bot replied
     ``[@Solomon Smith] Hello Patrick!``).
     """
-    msgs = []
+    msgs: list[dict[str, Any]] = []
     for t in turns:
         if t.role == "user":
             content = f"[{t.viewer}] {t.content}" if t.viewer else t.content
-            msgs.append(HumanMessage(content=content))
+            msgs.append({"role": "user", "content": content})
         else:
-            msgs.append(AIMessage(content=t.content))
+            msgs.append({"role": "assistant", "content": t.content})
     return msgs
+
+
+def _extract_text(response: Any) -> str:
+    """Pull plain text out of an Anthropic Message response. Skips
+    non-text content blocks (none expected for our chat flow, but the
+    SDK can return tool_use blocks in general). Empty string on no
+    text blocks; caller decides the fallback message."""
+    pieces: list[str] = []
+    for block in getattr(response, "content", []) or []:
+        block_type = getattr(block, "type", None) or (
+            block.get("type") if isinstance(block, dict) else None
+        )
+        if block_type == "text":
+            text = getattr(block, "text", None) or (
+                block.get("text") if isinstance(block, dict) else ""
+            )
+            if text:
+                pieces.append(text)
+    return "".join(pieces).strip()
 
 
 async def get_response(
@@ -218,19 +232,25 @@ async def get_response(
     recalled = await memory.recall_facts(viewer, text)
     history = memory.recent_turns(redis_client, scope_key)
 
-    messages = [
-        *_build_system_messages(viewer, prefs, recalled),
+    system_prompt = _build_system_prompt(viewer, prefs, recalled)
+    messages: list[dict[str, Any]] = [
         *_history_messages(history),
-        HumanMessage(content=text),
+        {"role": "user", "content": text},
     ]
 
     try:
-        loop = asyncio.get_running_loop()
+        import asyncio
+
         response = await asyncio.wait_for(
-            loop.run_in_executor(None, lambda: _llm.invoke(messages)),
-            timeout=10,
+            _llm.messages.create(
+                model=settings.specialist_model,
+                system=system_prompt,
+                messages=messages,
+                max_tokens=MAX_REPLY_TOKENS,
+            ),
+            timeout=LLM_TIMEOUT_SECONDS,
         )
-        reply = (response.content or "").strip() or "No response generated"
+        reply = _extract_text(response) or "No response generated"
 
         if reply == "No response generated":
             log.warning("llm_empty_response", scope=scope_key)
@@ -298,7 +318,7 @@ class TomBombadil(BaseAgent):
     in Sauron, see plan).
     """
 
-    tier: ClassVar[str] = "specialist"
+    tier: ClassVar[ConfigTier] = "specialist"
     name: ClassVar[str] = "tombombadil"
 
     async def run(self, task: AgentTask) -> AgentResult:

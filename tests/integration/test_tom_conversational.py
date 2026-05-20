@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agents._mock_llm import _MockResponse
+from agents._anthropic_mock import MockMessage, TextBlock
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import bot as tom_bot
 from agents.tombombadil import guards, memory
@@ -129,19 +129,19 @@ async def test_mention_resolution_substitutes_display_names(
     with display names before the LLM call."""
     captured: dict = {}
 
-    def fake_invoke(messages):
-        captured["last_human"] = next(
-            m.content for m in reversed(messages) if m.__class__.__name__ == "HumanMessage"
+    async def fake_create(*, messages, **_kwargs):
+        captured["last_user"] = next(
+            m["content"] for m in reversed(messages) if m["role"] == "user"
         )
-        return _MockResponse(content="ok")
+        return MockMessage(content=[TextBlock(text="ok")], stop_reason="end_turn")
 
     content = f"<@{fake_bot_user.id}> Say hello to <@{wes.id}>"
     msg = make_message(solomon, guild_channel, content, mentions=[fake_bot_user, wes])
-    with patch.object(tom_agent._llm, "invoke", side_effect=fake_invoke):
+    with patch.object(tom_agent._llm.messages, "create", side_effect=fake_create):
         await tom_bot.on_message(msg)
-    assert "Wes Prater" in captured["last_human"]
-    assert f"<@{wes.id}>" not in captured["last_human"]
-    assert f"<@{fake_bot_user.id}>" not in captured["last_human"]
+    assert "Wes Prater" in captured["last_user"]
+    assert f"<@{wes.id}>" not in captured["last_user"]
+    assert f"<@{fake_bot_user.id}>" not in captured["last_user"]
 
 
 # ---------------------------------------------------------------------------
