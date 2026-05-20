@@ -1,8 +1,8 @@
 """Round-trip test for long-term memory through Finrod.
 
-MockEmbedder is hash-based: identical text -> cosine 1.0, anything else
--> effectively random. So this test uses the exact same text for ingest
-and query to verify the *plumbing* (Finrod integration, metadata
+HashEmbedding is SHA-256-derived: identical text -> cosine 1.0, anything
+else -> effectively random. So this test uses the exact same text for
+ingest and query to verify the *plumbing* (Finrod integration, metadata
 filtering, score-floor gate). Semantic quality is the job of the real
 sentence-transformers embedder.
 """
@@ -10,17 +10,17 @@ sentence-transformers embedder.
 from __future__ import annotations
 
 import pytest
+from llama_index.core.llms import MockLLM
 
+from agents._llama_index_mock import HashEmbedding
 from agents.finrod.agent import Finrod
-from agents.finrod.embeddings import MockEmbedder
-from agents.finrod.store import InMemoryStore
 from agents.tombombadil import memory
 from agents.tombombadil.identity import Tier, Viewer
 
 
 @pytest.fixture
 def finrod_in_memory(monkeypatch):
-    instance = Finrod(store=InMemoryStore(), embedder=MockEmbedder())
+    instance = Finrod(llm=MockLLM(max_tokens=64), embed_model=HashEmbedding())
     monkeypatch.setattr(memory, "_get_finrod", lambda: instance)
     return instance
 

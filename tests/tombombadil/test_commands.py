@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import fakeredis
 import pytest
+from llama_index.core.llms import MockLLM
 
+from agents._llama_index_mock import HashEmbedding
 from agents.finrod.agent import Finrod
-from agents.finrod.embeddings import MockEmbedder
-from agents.finrod.store import InMemoryStore
 from agents.tombombadil import commands as tom_commands
 from agents.tombombadil import memory
 from agents.tombombadil.identity import Tier, Viewer
@@ -37,7 +37,7 @@ def r():
 
 @pytest.fixture
 def finrod_in_memory(monkeypatch):
-    instance = Finrod(store=InMemoryStore(), embedder=MockEmbedder())
+    instance = Finrod(llm=MockLLM(max_tokens=64), embed_model=HashEmbedding())
     monkeypatch.setattr(memory, "_get_finrod", lambda: instance)
     return instance
 
@@ -103,16 +103,18 @@ def test_cmd_club_stats_includes_top_rated():
 
 # ----- /forget -------------------------------------------------------
 
-def test_cmd_forget_short_clears_channel_history(r):
+@pytest.mark.asyncio
+async def test_cmd_forget_short_clears_channel_history(r):
     memory.append_turn(r, "tom:hist:ch:1", SOLOMON, "user", "hello")
-    reply = tom_commands.cmd_forget(r, SOLOMON, "tom:hist:ch:1", "short")
+    reply = await tom_commands.cmd_forget(r, SOLOMON, "tom:hist:ch:1", "short")
     assert "conversation history" in reply
     assert memory.recent_turns(r, "tom:hist:ch:1") == []
 
 
-def test_cmd_forget_prefs_clears_prefs(r):
+@pytest.mark.asyncio
+async def test_cmd_forget_prefs_clears_prefs(r):
     memory.set_pref(r, SOLOMON.discord_id, "suppress_films", "1")
-    reply = tom_commands.cmd_forget(r, SOLOMON, None, "prefs")
+    reply = await tom_commands.cmd_forget(r, SOLOMON, None, "prefs")
     assert "preferences" in reply
     assert memory.get_prefs(r, SOLOMON.discord_id) == {}
 
@@ -120,10 +122,10 @@ def test_cmd_forget_prefs_clears_prefs(r):
 @pytest.mark.asyncio
 async def test_cmd_forget_long_clears_finrod_facts(finrod_in_memory, r):
     await memory.remember_fact(SOLOMON, "user loves Tarkovsky", source_channel="x")
-    assert finrod_in_memory.store.count() > 0
-    reply = tom_commands.cmd_forget(r, SOLOMON, None, "long")
+    assert finrod_in_memory.node_count() > 0
+    reply = await tom_commands.cmd_forget(r, SOLOMON, None, "long")
     assert "fact" in reply.lower()
-    assert finrod_in_memory.store.count() == 0
+    assert finrod_in_memory.node_count() == 0
 
 
 @pytest.mark.asyncio
@@ -132,15 +134,16 @@ async def test_cmd_forget_all_clears_everything(finrod_in_memory, r):
     memory.set_pref(r, SOLOMON.discord_id, "suppress_films", "1")
     await memory.remember_fact(SOLOMON, "user loves Tarkovsky", source_channel="x")
 
-    reply = tom_commands.cmd_forget(r, SOLOMON, "tom:hist:ch:1", "all")
+    reply = await tom_commands.cmd_forget(r, SOLOMON, "tom:hist:ch:1", "all")
     assert memory.recent_turns(r, "tom:hist:ch:1") == []
     assert memory.get_prefs(r, SOLOMON.discord_id) == {}
-    assert finrod_in_memory.store.count() == 0
+    assert finrod_in_memory.node_count() == 0
     assert "Cleared" in reply
 
 
-def test_cmd_forget_rejects_invalid_scope(r):
-    reply = tom_commands.cmd_forget(r, SOLOMON, "tom:hist:ch:1", "everything")
+@pytest.mark.asyncio
+async def test_cmd_forget_rejects_invalid_scope(r):
+    reply = await tom_commands.cmd_forget(r, SOLOMON, "tom:hist:ch:1", "everything")
     assert "Scope must be" in reply
 
 
@@ -148,10 +151,10 @@ def test_cmd_forget_rejects_invalid_scope(r):
 async def test_forget_long_does_not_touch_other_viewer(finrod_in_memory, r):
     await memory.remember_fact(SOLOMON, "Solomon loves Tarkovsky", source_channel="x")
     await memory.remember_fact(BRIAN, "Brian loves Get Out", source_channel="x")
-    assert finrod_in_memory.store.count() == 2
+    assert finrod_in_memory.node_count() == 2
 
-    tom_commands.cmd_forget(r, SOLOMON, None, "long")
-    assert finrod_in_memory.store.count() == 1  # Brian's fact survives
+    await tom_commands.cmd_forget(r, SOLOMON, None, "long")
+    assert finrod_in_memory.node_count() == 1  # Brian's fact survives
 
 
 # ----- /whoami -------------------------------------------------------

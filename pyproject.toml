@@ -29,6 +29,13 @@ dependencies = [
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
 
+    # RAG (Finrod). HuggingFace embedding integration is heavy
+    # (pulls torch + transformers); it lives in the `[full]` extra
+    # alongside sentence-transformers. The slim default uses
+    # LlamaIndex's MockEmbedding (in core).
+    "llama-index-core>=0.14",
+    "llama-index-llms-anthropic>=0.11",
+
     # MCP
     "mcp[cli]>=1.0",
 
@@ -62,11 +69,14 @@ dev = [
 ]
 
 # Real semantic embeddings + Milvus vector store. Skipped in the slim
-# default install (Finrod uses MockEmbedder + InMemoryStore). Add `[full]`
-# when you want sentence-transformers (~1GB torch) and pymilvus.
+# default install (Finrod uses LlamaIndex MockEmbedding + SimpleVectorStore).
+# Add `[full]` when you want sentence-transformers (~1GB torch) and the
+# LlamaIndex Milvus integration.
 full = [
     "sentence-transformers>=3.0",
     "pymilvus>=2.4",
+    "llama-index-embeddings-huggingface>=0.7",
+    "llama-index-vector-stores-milvus>=1.1",
 ]
 
 [build-system]

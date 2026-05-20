@@ -108,7 +108,7 @@ def cmd_club_stats() -> str:
     return "\n".join(lines)
 
 
-def cmd_forget(redis_client, viewer: Viewer, scope_key: str | None, scope: str) -> str:
+async def cmd_forget(redis_client, viewer: Viewer, scope_key: str | None, scope: str) -> str:
     """``/forget scope:<short|long|prefs|all>`` -- wipe per-scope state
     for the invoking viewer.
     """
@@ -125,7 +125,7 @@ def cmd_forget(redis_client, viewer: Viewer, scope_key: str | None, scope: str) 
         memory.clear_prefs(redis_client, viewer.discord_id)
         removed_parts.append("your saved preferences")
     if scope in ("long", "all"):
-        deleted = memory.forget_facts(viewer)
+        deleted = await memory.forget_facts(viewer)
         if deleted:
             removed_parts.append(f"{deleted} long-term fact chunk(s) attributed to you")
         else:
@@ -217,7 +217,7 @@ def register_commands(bot: commands.Bot) -> None:
         metrics.SLASH_COMMANDS.labels(name="forget").inc()
         viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
         scope_key = memory_mod.history_scope_key(interaction)
-        reply = cmd_forget(get_redis_sync(), viewer, scope_key, scope)
+        reply = await cmd_forget(get_redis_sync(), viewer, scope_key, scope)
         await interaction.response.send_message(reply, ephemeral=True)
 
     @bot.tree.command(name="whoami", description="Show how Tom sees you")
