@@ -20,11 +20,12 @@ class Settings(BaseSettings):
     # Auth
     arda_api_key: str = "arda-dev-key-2026"
 
-    # LLM providers
+    # LLM providers. Anthropic is the sole provider after Phase 3:
+    # Sauron (Opus, orchestrator), Finrod (Haiku, retriever), and
+    # Tom Bombadil (Haiku, specialist) all call it through the
+    # `anthropic` SDK directly. Set USE_MOCK_LLM=false + this key to
+    # run for real.
     anthropic_api_key: str = ""
-    gemini_api_key: str = ""
-    groq_api_key: str = ""
-    claude_api_key: str = ""
 
     # Dev mode -- mock all LLM calls
     use_mock_llm: bool = True

@@ -21,12 +21,10 @@ dependencies = [
 
     # LLM frameworks. Anthropic SDK is the canonical provider for
     # Sauron (Opus, orchestrator), Finrod (Haiku, retriever), and
-    # Tom Bombadil (Haiku, specialist). LangChain stays only because
-    # planner.py's classify_llm uses ChatAnthropic; everything else
-    # is on provider SDKs directly.
+    # Tom Bombadil (Haiku, specialist). LangChain is gone from this
+    # repo's direct deps; langgraph still pulls langchain-core in
+    # transitively for its own type system.
     "anthropic>=0.40",
-    "langchain-core>=0.3",
-    "langchain-anthropic>=0.3",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
 
