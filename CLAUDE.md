@@ -31,7 +31,7 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
   - `base.py` (the ABC), `_mock_llm.py` (LangChain-shaped mock), `_anthropic_mock.py` (Anthropic-shaped mock for Sauron).
 - **`core/`** — `config.py` (pydantic-settings singleton; per-tier model/provider routing), `models.py` (`AgentTask`/`AgentResult`), `redis_client.py`, `milvus_client.py`, `logging.py` (structlog + trace IDs).
 - **`api/`** — FastAPI app. `main.py` lifespan builds the agents; `_make_checkpointer` picks `MemorySaver` (mock/dev) vs durable `AsyncSqliteSaver` (prod). Generic `POST /agents/{name}/run` reaches any agent.
-- **`mcp_server/`** — MCP tools; currently calls the legacy Earendil HTTP API.
+- **`mcp_server/`** — MCP tools (`arda_execute / _query / _plan / _status`) that call the unified API (`api/main.py`) at `settings.arda_api_url`.
 
 ## Conventions & gotchas
 
@@ -39,7 +39,7 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
 - **Preserve the `BaseAgent.run` contract.** Sauron's result envelope (`result.result["intent"|"specialist"|"specialist_result"]`) is depended on by the API and e2e tests — keep it stable when changing internals.
 - **Checkpointer is durable in prod only.** Dev/test = `MemorySaver` (file-free); prod = `AsyncSqliteSaver` at `settings.checkpointer_db_path` (`.arda/`, gitignored).
 - **Import-time side effects exist.** `agents/tombombadil/agent.py` builds a module-level `FilmKnowledge()` at import, which reads `LETTERBOXD_EXPORT_DIR` in `__init__`. Tests needing hermeticity must clear env *before* importing it (see `tests/integration/conftest.py`).
-- **Ruff** is authoritative (`select = E,F,I,B,UP,N,SIM`, line length 100). `legacy_api/` and a few legacy dirs are excluded — don't lint-chase them.
+- **Ruff** is authoritative (`select = E,F,I,B,UP,N,SIM`, line length 100). A few legacy dirs (`earendil/`, `tombombadil/`, `earendil-mcp/`) are excluded — don't lint-chase them.
 - **Tests:** `pytest-asyncio` auto mode. `phase4`/`integration` markers gate tests needing live services; `tests/conftest.py` skips `phase4`.
 
 ## Git

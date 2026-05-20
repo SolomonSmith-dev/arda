@@ -1,10 +1,19 @@
 """ARDA MCP server.
 
-Exposes the unified ARDA API as native Claude tools over stdio.
+Exposes the unified ARDA API (api/main.py) as native Claude tools over
+stdio. The base URL comes from ``settings.arda_api_url`` (default
+``http://localhost:5000``); the same ``ARDA_API_KEY`` the API enforces
+on incoming requests is sent in the ``x-api-key`` header.
 
-For sub-pass 2 the API URL still points at the legacy Earendil host
-(Mac Mini, port 5000). Phase 3 swaps this to the unified api/main.py
-on whichever host hosts ARDA -- the MCP tool surface stays the same.
+Four tools:
+  - ``arda_execute`` -- enqueues a shell command via ``POST /task`` and
+    optionally polls ``GET /result/{task_id}`` until completion.
+  - ``arda_query``   -- read-only system / Redis inspection via
+    ``POST /query``.
+  - ``arda_plan``    -- natural-language → intent / specialist routing
+    via ``POST /plan``.
+  - ``arda_status``  -- combines ``GET /health`` + system status query
+    into a single health report.
 """
 
 from __future__ import annotations
@@ -23,7 +32,7 @@ HEADERS = {
     "x-api-key": settings.arda_api_key,
 }
 
-client = httpx.Client(base_url=settings.earendil_host, headers=HEADERS, timeout=30.0)
+client = httpx.Client(base_url=settings.arda_api_url, headers=HEADERS, timeout=30.0)
 
 mcp = FastMCP("arda_mcp")
 

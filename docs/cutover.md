@@ -77,8 +77,7 @@ sudo systemctl start earendil-worker
 # restart the legacy FastAPI process the way you used to
 ```
 
-`legacy_api/earendil_api.py` is preserved as the rollback artifact.
-**Do not delete it.**
+The ``legacy_api/earendil_api.py`` rollback artifact has been removed; ``api/main.py`` is now canonical and the MCP server points at it via ``ARDA_API_URL`` (see ``.env.example``). Rollback via git revert if needed.
 
 ## Notes
 

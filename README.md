@@ -125,9 +125,9 @@ core/           Shared foundation imported by every agent
   logging.py    structlog with trace-id injection
 
 mcp_server/     FastMCP server exposing arda_execute / arda_plan /
-                arda_query / arda_status as Claude Code tools
+                arda_query / arda_status as Claude Code tools,
+                wired to the unified api/main.py over HTTP
 
-legacy_api/     Original earendil_api.py preserved as rollback artifact
 docs/           ADRs + cutover runbook
 tests/          pytest suite (109 passing, 1 integration skipped)
 scripts/        dev.sh, ingest.py
