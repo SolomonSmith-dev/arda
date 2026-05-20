@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     # Finrod (retriever) does grounded RAG synthesis -- Haiku is the
     # right tier: fast and cheap, called via LlamaIndex's Anthropic LLM.
     retriever_model: str = "claude-haiku-4-5-20251001"
-    specialist_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    # Tom Bombadil (specialist) conversational chat -- Haiku via the
+    # anthropic SDK directly. Cheaper than Opus, fast enough for a
+    # Discord round-trip.
+    specialist_model: str = "claude-haiku-4-5-20251001"
 
     # Sauron LangGraph checkpointer (SQLite path; relative to cwd)
     checkpointer_db_path: str = ".arda/checkpoints.sqlite"
@@ -111,7 +114,7 @@ class Settings(BaseSettings):
             "orchestrator": "anthropic",
             "executor": "groq",
             "retriever": "anthropic",
-            "specialist": "groq",
+            "specialist": "anthropic",
         }
         return mapping[tier]
 

@@ -129,3 +129,55 @@ class MockAnthropicClient:
 
     def __post_init__(self) -> None:
         self.messages = _MockMessages(self)
+
+
+# --- Chat-mode mock (Tom Bombadil; no tool_use) ----------------------
+
+class _MockChatMessages:
+    """Tom Bombadil's only LLM mode: pure chat completion. Always
+    returns a deterministic text block so tests can assert on the
+    captured `system` and `messages` arguments without ever exercising
+    a tool_use code path."""
+
+    def __init__(self, parent: MockAnthropicChatClient):
+        self._parent = parent
+
+    async def create(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict],
+        max_tokens: int,
+        **kwargs: Any,
+    ) -> MockMessage:
+        self._parent.calls.append(
+            {
+                "model": model,
+                "system": system,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "kwargs": kwargs,
+            }
+        )
+        latest = _latest_user(messages)
+        echo = _extract_user_text(latest)[:120] if latest else ""
+        return MockMessage(
+            content=[TextBlock(text=f"[mock:{model}] {echo}")],
+            stop_reason="end_turn",
+            model=model,
+        )
+
+
+@dataclass
+class MockAnthropicChatClient:
+    """Mirrors the slice of `anthropic.AsyncAnthropic` Tom Bombadil
+    uses: `await client.messages.create(model, system, messages,
+    max_tokens)` returning a `MockMessage` whose `.content[0].text`
+    echoes the latest user input with a `[mock:<model>]` marker."""
+
+    model: str = "mock"
+    calls: list[dict] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.messages = _MockChatMessages(self)

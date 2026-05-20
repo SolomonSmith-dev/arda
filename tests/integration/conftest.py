@@ -22,8 +22,8 @@ import fakeredis
 import pytest
 from llama_index.core.llms import MockLLM
 
+from agents._anthropic_mock import MockMessage, TextBlock
 from agents._llama_index_mock import HashEmbedding
-from agents._mock_llm import _MockResponse
 from agents.finrod.agent import Finrod
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import bot as tom_bot
@@ -200,24 +200,25 @@ async def _send_mention(channel, user, text, *, bot_user):
 
 @contextmanager
 def capture_system_prompt():
-    """Patch tom_agent._llm.invoke to capture the joined SystemMessage
-    contents. Yields a dict that gets a ``sys`` key populated after the
-    next ``get_response`` / ``on_message`` call.
+    """Patch ``tom_agent._llm.messages.create`` to capture the
+    Anthropic-shaped ``system`` argument. Yields a dict that gets a
+    ``sys`` key populated after the next ``get_response`` /
+    ``on_message`` call.
 
-    Use:
+    Use::
+
         with capture_system_prompt() as cap:
             await tom_agent.get_response(...)
         assert "..." in cap["sys"]
     """
     captured: dict = {}
 
-    def _fake(messages):
-        captured["sys"] = "\n".join(
-            m.content for m in messages if m.__class__.__name__ == "SystemMessage"
-        )
-        return _MockResponse(content="ok")
+    async def _fake(*, system, messages, **_kwargs):
+        captured["sys"] = system
+        captured["messages"] = messages
+        return MockMessage(content=[TextBlock(text="ok")], stop_reason="end_turn")
 
-    with patch.object(tom_agent._llm, "invoke", side_effect=_fake):
+    with patch.object(tom_agent._llm.messages, "create", side_effect=_fake):
         yield captured
 
 
