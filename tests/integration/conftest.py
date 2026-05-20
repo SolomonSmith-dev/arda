@@ -20,11 +20,11 @@ from unittest.mock import patch
 
 import fakeredis
 import pytest
+from llama_index.core.llms import MockLLM
 
+from agents._llama_index_mock import HashEmbedding
 from agents._mock_llm import _MockResponse
 from agents.finrod.agent import Finrod
-from agents.finrod.embeddings import MockEmbedder
-from agents.finrod.store import InMemoryStore
 from agents.tombombadil import agent as tom_agent
 from agents.tombombadil import bot as tom_bot
 from agents.tombombadil import identity, memory
@@ -67,7 +67,7 @@ def fake_redis(monkeypatch):
 
 @pytest.fixture
 def finrod_in_memory(monkeypatch):
-    instance = Finrod(store=InMemoryStore(), embedder=MockEmbedder())
+    instance = Finrod(llm=MockLLM(max_tokens=64), embed_model=HashEmbedding())
     monkeypatch.setattr(memory, "_get_finrod", lambda: instance)
     return instance
 

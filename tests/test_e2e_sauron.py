@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import fakeredis
 import pytest
+from llama_index.core import MockEmbedding
+from llama_index.core.llms import MockLLM
 
 from agents.earendil import agent as earendil_module
 from agents.earendil.agent import Earendil
 from agents.finrod.agent import Finrod
-from agents.finrod.embeddings import MockEmbedder
-from agents.finrod.store import InMemoryStore
+from agents.finrod.embeddings import EMBED_DIM
 from agents.sauron.agent import Sauron
 from agents.tombombadil import agent as tombombadil_module
 from agents.tombombadil.agent import TomBombadil
@@ -31,7 +32,10 @@ def fake_redis(monkeypatch):
 
 @pytest.fixture
 def sauron(fake_redis) -> Sauron:
-    finrod = Finrod(store=InMemoryStore(), embedder=MockEmbedder())
+    finrod = Finrod(
+        llm=MockLLM(max_tokens=64),
+        embed_model=MockEmbedding(embed_dim=EMBED_DIM),
+    )
     return Sauron(specialists={
         "earendil": Earendil(),
         "finrod": finrod,

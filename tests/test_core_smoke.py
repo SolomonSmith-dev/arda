@@ -20,8 +20,10 @@ def test_model_router_default():
     s = Settings(use_mock_llm=False)
     assert "claude" in s.model_for_tier("orchestrator")
     assert "llama" in s.model_for_tier("executor")
+    assert "claude" in s.model_for_tier("retriever")
     assert s.provider_for_tier("orchestrator") == "anthropic"
     assert s.provider_for_tier("executor") == "groq"
+    assert s.provider_for_tier("retriever") == "anthropic"
 
 
 def test_provider_mock_when_use_mock_llm_true():

@@ -29,10 +29,12 @@ def _have_real_keys() -> bool:
 @pytest.mark.skipif(not _have_real_keys(), reason="real GEMINI/GROQ keys not configured")
 @pytest.mark.asyncio
 async def test_sauron_real_gemini_routes_and_returns():
+    from llama_index.core import MockEmbedding
+    from llama_index.core.llms import MockLLM
+
     from agents.earendil.agent import Earendil
     from agents.finrod.agent import Finrod
-    from agents.finrod.embeddings import MockEmbedder
-    from agents.finrod.store import InMemoryStore
+    from agents.finrod.embeddings import EMBED_DIM
     from agents.sauron.agent import Sauron
     from agents.tombombadil.agent import TomBombadil
     from core.models import AgentTask, TaskStatus
@@ -40,7 +42,10 @@ async def test_sauron_real_gemini_routes_and_returns():
     sauron = Sauron(
         specialists={
             "earendil": Earendil(),
-            "finrod": Finrod(store=InMemoryStore(), embedder=MockEmbedder()),
+            "finrod": Finrod(
+                llm=MockLLM(max_tokens=64),
+                embed_model=MockEmbedding(embed_dim=EMBED_DIM),
+            ),
             "tombombadil": TomBombadil(),
         }
     )

@@ -38,7 +38,9 @@ class Settings(BaseSettings):
     # Model overrides per tier
     orchestrator_model: str = "claude-opus-4-7"
     executor_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
-    retriever_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    # Finrod (retriever) does grounded RAG synthesis -- Haiku is the
+    # right tier: fast and cheap, called via LlamaIndex's Anthropic LLM.
+    retriever_model: str = "claude-haiku-4-5-20251001"
     specialist_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
 
     # Sauron LangGraph checkpointer (SQLite path; relative to cwd)
@@ -108,7 +110,7 @@ class Settings(BaseSettings):
         mapping: dict[Tier, Provider] = {
             "orchestrator": "anthropic",
             "executor": "groq",
-            "retriever": "groq",
+            "retriever": "anthropic",
             "specialist": "groq",
         }
         return mapping[tier]
