@@ -44,6 +44,15 @@ Each list entry is JSON:
 - 7-day idle TTL; refreshed on every push.
 - Each turn's content is prefixed with `[viewer]` when injected into
   the LLM prompt, so multi-user channel history disambiguates speakers.
+- Stored history should never include `[viewer]` prefixes on assistant
+  turns (V6). If any pre-V6 entries still contain the prefix, they
+  naturally expire within the 7-day TTL. To audit after the TTL window:
+
+  ```bash
+  redis-cli --scan --pattern 'tom:hist:*' \
+    | xargs -I{} redis-cli LRANGE "{}" 0 -1 \
+    | grep '"role":"assistant".*"\[viewer\]'
+  ```
 
 DM and guild-channel scopes are deliberately separate. Personal
 context shared in DMs does not leak into the club channel.
