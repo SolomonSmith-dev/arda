@@ -27,30 +27,52 @@ def _build_llm():
         from agents._mock_llm import MockLLM
         return MockLLM(model=settings.specialist_model)
     from langchain_groq import ChatGroq
+    # Low temperature: film-rating lookups are factual retrieval, not
+    # creative writing. Llama 4 Scout at 0.7 confabulates "10/10" for
+    # films it has the actual rating for.
     return ChatGroq(
         model=settings.specialist_model,
         api_key=settings.groq_api_key,
-        temperature=0.7,
+        temperature=0.2,
     )
 
 
 _llm = _build_llm()
 _film_knowledge = FilmKnowledge(letterboxd_viewer_name=DEFAULT_VIEWER)
 
+_FILM_SUMMARY = _film_knowledge.get_user_summary(DEFAULT_VIEWER)
+log.info(
+    "film_summary_ready",
+    viewer=DEFAULT_VIEWER,
+    has_summary=_FILM_SUMMARY is not None,
+    summary_chars=len(_FILM_SUMMARY) if _FILM_SUMMARY else 0,
+    films_in_db=len(_film_knowledge.films),
+    people_in_db=len(_film_knowledge.people),
+)
+
+
+_LETTERBOXD_PREAMBLE = (
+    "FILM RATINGS LOOKUP — STRICT RULES:\n"
+    "1. The list below is the ONLY source of truth for the user's ratings. "
+    "Every rated film the user has watched is in it.\n"
+    "2. When asked about a specific film, scan the alphabetical list and "
+    "quote the rating EXACTLY as written (e.g. '9/10', not '10/10').\n"
+    "3. If a film is NOT in the list, say 'I don't see it in your ratings' "
+    "— do NOT guess, do NOT invent a score.\n"
+    "4. When asked for 'top N' or 'highest rated', use the Highest-rated "
+    "line below verbatim. Do NOT pad the list with films that aren't there.\n"
+    "5. Watch dates are NOT in this data. If asked, say 'I don't have watch "
+    "dates, only ratings.'\n"
+    "6. Never claim to be 'checking Letterboxd live' — you have a snapshot "
+    "embedded here, nothing more.\n\n"
+)
+
 
 def _system_messages() -> list[SystemMessage]:
     msgs = [SystemMessage(content=CONDUCT_PROMPT)]
-    summary = _film_knowledge.get_user_summary(DEFAULT_VIEWER)
-    if summary:
+    if _FILM_SUMMARY:
         msgs.append(
-            SystemMessage(
-                content=(
-                    "You have access to the user's Letterboxd film history. "
-                    "Use it when asked about ratings, favorites, or "
-                    "recommendations. Never invent ratings — if a film isn't "
-                    "in the list below, say so.\n\n" + summary
-                )
-            )
+            SystemMessage(content=_LETTERBOXD_PREAMBLE + _FILM_SUMMARY)
         )
     return msgs
 
