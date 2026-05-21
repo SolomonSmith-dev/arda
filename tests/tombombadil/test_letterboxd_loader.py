@@ -156,6 +156,76 @@ def test_load_export_viewer_name_override_wins(tmp_path):
     assert export.name == "Solomon Smith"
 
 
+def test_film_knowledge_constructor_viewer_name_overrides_loader(tmp_path):
+    """Constructor arg is the in-code default — env still wins over it."""
+    (tmp_path / "profile.csv").write_text(
+        "Date Joined,Username,Given Name,Family Name,Email Address,"
+        "Location,Website,Bio,Pronoun,Favorite Films\n"
+        "2022-07-27,SolomonThaChef,Solomon,,,California,,,He / his,\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "ratings.csv").write_text(
+        "Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-15,Inception,2010,https://lb/inception,4.5\n",
+        encoding="utf-8",
+    )
+    fk = FilmKnowledge(
+        letterboxd_dir=tmp_path, letterboxd_viewer_name="Solomon Smith"
+    )
+    inception = next(f for f in fk.films if f["title"] == "Inception")
+    assert "Solomon Smith" in [w["name"] for w in inception["watchers"]]
+
+
+def test_film_knowledge_env_var_overrides_constructor_arg(tmp_path, monkeypatch):
+    (tmp_path / "profile.csv").write_text(
+        "Date Joined,Username,Given Name,Family Name,Email Address,"
+        "Location,Website,Bio,Pronoun,Favorite Films\n"
+        "2022-07-27,SolomonThaChef,Solomon,,,California,,,He / his,\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "ratings.csv").write_text(
+        "Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-15,Inception,2010,https://lb/inception,4.5\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LETTERBOXD_VIEWER_NAME", "Env Wins")
+    fk = FilmKnowledge(
+        letterboxd_dir=tmp_path, letterboxd_viewer_name="Constructor Loses"
+    )
+    inception = next(f for f in fk.films if f["title"] == "Inception")
+    names = [w["name"] for w in inception["watchers"]]
+    assert "Env Wins" in names
+    assert "Constructor Loses" not in names
+
+
+def test_get_user_summary_lists_all_rated_films_alphabetically(tmp_path):
+    (tmp_path / "profile.csv").write_text(
+        "Date Joined,Username,Given Name,Family Name,Email Address,"
+        "Location,Website,Bio,Pronoun,Favorite Films\n"
+        "2022-07-27,solo,Solomon,Smith,,,,,,\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "ratings.csv").write_text(
+        "Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-15,Inception,2010,uri,4.5\n"
+        "2024-02-01,Stalker,1979,uri,5.0\n"
+        "2024-03-10,Aftersun,2022,uri,4.0\n",
+        encoding="utf-8",
+    )
+    # Use a name not in seed FILM_DATABASE so the count matches the export.
+    fk = FilmKnowledge(letterboxd_dir=tmp_path, letterboxd_viewer_name="Test User")
+    summary = fk.get_user_summary("Test User")
+    assert summary is not None
+    assert "Aftersun" in summary
+    assert "Inception" in summary
+    assert "Stalker" in summary
+    # Alphabetical order in the all-films section (not the "Highest-rated" line)
+    alpha = summary.split("All rated films (alphabetical):", 1)[1]
+    assert alpha.index("Aftersun") < alpha.index("Inception") < alpha.index("Stalker")
+    # "3 films rated" rather than the old "top-30" truncation
+    assert "3 films rated" in summary
+
+
 def test_film_knowledge_honors_viewer_name_env(tmp_path, monkeypatch):
     (tmp_path / "profile.csv").write_text(
         "Date Joined,Username,Given Name,Family Name,Email Address,"

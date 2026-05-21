@@ -112,7 +112,12 @@ FILM_DATABASE = {
 
 
 class FilmKnowledge:
-    def __init__(self, redis_client=None, letterboxd_dir: Path | str | None = None):
+    def __init__(
+        self,
+        redis_client=None,
+        letterboxd_dir: Path | str | None = None,
+        letterboxd_viewer_name: str | None = None,
+    ):
         self.redis = redis_client
 
         if letterboxd_dir is None:
@@ -125,7 +130,11 @@ class FilmKnowledge:
             path = Path(letterboxd_dir)
             if path.is_dir():
                 try:
-                    viewer_name = os.environ.get("LETTERBOXD_VIEWER_NAME") or None
+                    viewer_name = (
+                        os.environ.get("LETTERBOXD_VIEWER_NAME")
+                        or letterboxd_viewer_name
+                        or None
+                    )
                     export = load_letterboxd_export(path, viewer_name=viewer_name)
                     merged = merge_into_film_database(FILM_DATABASE, export)
                     log.info(
@@ -179,8 +188,9 @@ class FilmKnowledge:
 
         return best
 
-    def get_user_summary(self, name: str, recent_limit: int = 30) -> str | None:
-        """Compact summary for the LLM system prompt: favorites + recent rated.
+    def get_user_summary(self, name: str, max_films: int | None = None) -> str | None:
+        """Full rating index for the LLM system prompt: all rated films
+        alphabetized so the LLM can grep for any title the user asks about.
 
         Returns None if the user isn't in ``self.people``.
         """
@@ -188,34 +198,32 @@ class FilmKnowledge:
         if not person:
             return None
 
-        favorites = (
-            [w["name"] for w in []]
-            + [
-                f["title"]
-                for f in self.films
-                if any(
-                    w.get("name") == name and (w.get("rating") or 0) >= 9
-                    for w in f.get("watchers", [])
-                )
-            ]
-        )
-
-        rated_by_user: list[tuple[str, float]] = []
+        rated: list[tuple[str, int | None, float]] = []
         for f in self.films:
             for w in f.get("watchers", []):
                 if w.get("name") == name and w.get("rating") is not None:
-                    rated_by_user.append((f["title"], float(w["rating"])))
-        rated_by_user.sort(key=lambda x: -x[1])
+                    rated.append((f["title"], f.get("year"), float(w["rating"])))
+        rated.sort(key=lambda x: x[0].lower())
+        if max_films is not None:
+            rated = rated[:max_films]
 
-        lines = [f"Viewer: {name} (avg {person.get('avg_rating', 0)})"]
-        if favorites[:8]:
-            lines.append("Top-rated: " + ", ".join(favorites[:8]))
-        if rated_by_user:
-            top = rated_by_user[:recent_limit]
+        if not rated:
+            return None
+
+        lines = [
+            f"Viewer: {name} "
+            f"(avg {person.get('avg_rating', 0)}, {len(rated)} films rated)"
+        ]
+        top = sorted(rated, key=lambda x: -x[2])[:10]
+        if top:
             lines.append(
-                "Recent ratings: "
-                + ", ".join(f"{t} ({r:g}/10)" for t, r in top)
+                "Highest-rated: "
+                + ", ".join(f"{t} ({r:g}/10)" for t, _y, r in top)
             )
+        lines.append("All rated films (alphabetical):")
+        for title, year, rating in rated:
+            year_str = f" ({year})" if year else ""
+            lines.append(f"- {title}{year_str}: {rating:g}/10")
         return "\n".join(lines)
 
     def get_context_summary(self) -> str:

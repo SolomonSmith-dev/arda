@@ -35,7 +35,7 @@ def _build_llm():
 
 
 _llm = _build_llm()
-_film_knowledge = FilmKnowledge()
+_film_knowledge = FilmKnowledge(letterboxd_viewer_name=DEFAULT_VIEWER)
 
 
 def _system_messages() -> list[SystemMessage]:
