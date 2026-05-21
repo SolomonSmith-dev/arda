@@ -38,6 +38,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code local state (never commit)
+.claude/
+CLAUDE.md
+
 # Project-specific
 # Letterboxd CSV exports are personal and bulky — never commit.
 data/letterboxd/
