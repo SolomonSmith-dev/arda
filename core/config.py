@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids: str = ""
 
+    # GitHub (Earendil GitHub audit tool)
+    github_token: str = ""
+    github_username: str = "SolomonSmith-dev"
+
     # Base URL of the unified ARDA API. The MCP server (mcp_server/server.py)
     # talks to it over HTTP; agents and routes share the same key in
     # `arda_api_key` for the `x-api-key` header.
