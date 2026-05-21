@@ -127,6 +127,15 @@ async def get_response(channel_id: str, text: str) -> str:
 
     log.info("llm_request_start", channel=channel_id, text_length=len(text))
 
+    facts = _direct_film_facts(text)
+    log.info(
+        "film_facts_lookup",
+        channel=channel_id,
+        text_preview=text[:80],
+        facts_found=facts is not None,
+        facts_preview=(facts[:200] if facts else None),
+    )
+
     messages = [*_system_messages(text), HumanMessage(content=text)]
     try:
         loop = asyncio.get_running_loop()
