@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import ClassVar
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -68,12 +69,55 @@ _LETTERBOXD_PREAMBLE = (
 )
 
 
-def _system_messages() -> list[SystemMessage]:
+def _direct_film_facts(text: str, viewer: str = DEFAULT_VIEWER) -> str | None:
+    """Word-boundary scan for known film titles in ``text``; for each hit,
+    look up the viewer's actual rating directly from the data structure.
+
+    The LLM is unreliable at grepping a 7K-token alphabetical list — it
+    confabulates "10/10" even with the data in front of it. Giving it a
+    short, scoped block of verified facts for THIS query side-steps that.
+    """
+    text_lower = text.lower()
+    facts: list[str] = []
+    seen: set[str] = set()
+    for film in _film_knowledge.films:
+        title = (film.get("title") or "").strip()
+        if not title or title.lower() in seen:
+            continue
+        if not re.search(rf"\b{re.escape(title.lower())}\b", text_lower):
+            continue
+        seen.add(title.lower())
+        watcher = next(
+            (w for w in film.get("watchers", []) if w.get("name") == viewer),
+            None,
+        )
+        if watcher is None:
+            facts.append(f"- {title}: {viewer} has NOT rated this")
+        elif watcher.get("rating") is None:
+            facts.append(f"- {title}: {viewer} watched but did not rate")
+        else:
+            facts.append(
+                f"- {title}: {viewer} rated this {float(watcher['rating']):g}/10"
+            )
+    if not facts:
+        return None
+    return (
+        "VERIFIED RATINGS FOR THIS QUERY — use these EXACTLY, do NOT round, "
+        "do NOT contradict, do NOT mention the long list when these facts "
+        "answer the question:\n" + "\n".join(facts) + "\n"
+    )
+
+
+def _system_messages(text: str = "") -> list[SystemMessage]:
     msgs = [SystemMessage(content=CONDUCT_PROMPT)]
     if _FILM_SUMMARY:
         msgs.append(
             SystemMessage(content=_LETTERBOXD_PREAMBLE + _FILM_SUMMARY)
         )
+    if text:
+        facts = _direct_film_facts(text)
+        if facts:
+            msgs.append(SystemMessage(content=facts))
     return msgs
 
 
@@ -83,7 +127,7 @@ async def get_response(channel_id: str, text: str) -> str:
 
     log.info("llm_request_start", channel=channel_id, text_length=len(text))
 
-    messages = [*_system_messages(), HumanMessage(content=text)]
+    messages = [*_system_messages(text), HumanMessage(content=text)]
     try:
         loop = asyncio.get_running_loop()
         response = await asyncio.wait_for(
