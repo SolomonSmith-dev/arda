@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids: str = ""
 
+    # GitHub (Earendil GitHub audit tool)
+    github_token: str = ""
+    github_username: str = "SolomonSmith-dev"
+
     # Earendil mac mini -- the host that runs the API. Name is historical;
     # ARDA_API_KEY is the canonical auth secret (same key is used by the
     # MCP client and server).
