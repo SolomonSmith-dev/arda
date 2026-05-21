@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from typing import ClassVar
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -29,12 +30,63 @@ def _build_llm():
     return ChatGroq(
         model=settings.specialist_model,
         api_key=settings.groq_api_key,
-        temperature=0.7,
+        temperature=0.2,
     )
 
 
 _llm = _build_llm()
 _film_knowledge = FilmKnowledge()
+
+_LETTERBOXD_PREAMBLE = (
+    "FILM RATINGS LOOKUP — STRICT RULES:\n"
+    "1. The list below is the ONLY source of truth for the viewer's ratings. "
+    "Every rated film is in it.\n"
+    "2. When asked about a specific film, find it and quote the rating EXACTLY "
+    "(e.g. '9/10', not '10/10').\n"
+    "3. If a film is NOT in the list, say 'I don't see it in your ratings' "
+    "— do NOT guess, do NOT invent a score.\n"
+    "4. When asked for 'top N' or 'highest rated', use the Top-rated line "
+    "verbatim. Do NOT pad the list with films that aren't there.\n"
+    "5. Watch dates are NOT in this data. Say so if asked.\n"
+    "6. Never claim to be 'checking Letterboxd live' — you have a snapshot.\n\n"
+)
+
+
+def _direct_film_facts(text: str, viewer_name: str) -> str | None:
+    """Word-boundary scan for known titles; inject verified ratings for this query.
+
+    The LLM confabulates ratings even with a 7K-token list in context.
+    Giving it a tight, pre-resolved block for the CURRENT query prevents that.
+    """
+    text_lower = text.lower()
+    facts: list[str] = []
+    seen: set[str] = set()
+    for film in _film_knowledge.films:
+        title = (film.get("title") or "").strip()
+        if not title or title.lower() in seen:
+            continue
+        if not re.search(rf"\b{re.escape(title.lower())}\b", text_lower):
+            continue
+        seen.add(title.lower())
+        watcher = next(
+            (w for w in film.get("watchers", []) if w.get("name") == viewer_name),
+            None,
+        )
+        if watcher is None:
+            facts.append(f"- {title}: {viewer_name} has NOT rated this")
+        elif watcher.get("rating") is None:
+            facts.append(f"- {title}: {viewer_name} watched but did not rate")
+        else:
+            facts.append(
+                f"- {title}: {viewer_name} rated this {float(watcher['rating']):g}/10"
+            )
+    if not facts:
+        return None
+    return (
+        "VERIFIED RATINGS FOR THIS QUERY — use these EXACTLY, do NOT round, "
+        "do NOT contradict:\n" + "\n".join(facts) + "\n"
+    )
+
 
 
 _SELF_DESCRIPTION = (
@@ -112,7 +164,8 @@ def _film_summary_block(viewer: Viewer, prefs: dict[str, str]) -> str | None:
             "recorded ratings yet. Ask, don't fabricate."
         )
     return (
-        "You have access to the user's film history. Use it when asked about "
+        _LETTERBOXD_PREAMBLE
+        + "You have access to the user's film history. Use it when asked about "
         "ratings, favorites, or recommendations. Never invent ratings — if a "
         f"film isn't listed, say so.\n\n{summary}"
     )
@@ -218,8 +271,19 @@ async def get_response(
     recalled = await memory.recall_facts(viewer, text)
     history = memory.recent_turns(redis_client, scope_key)
 
+    viewer_name = viewer.canonical_name or viewer.discord_name
+    facts = _direct_film_facts(text, viewer_name)
+    log.info(
+        "film_facts_lookup",
+        scope=scope_key,
+        text_preview=text[:80],
+        facts_found=facts is not None,
+        facts_preview=(facts[:200] if facts else None),
+    )
+
     messages = [
         *_build_system_messages(viewer, prefs, recalled),
+        *([] if not facts else [SystemMessage(content=facts)]),
         *_history_messages(history),
         HumanMessage(content=text),
     ]
