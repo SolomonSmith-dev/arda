@@ -374,20 +374,32 @@ understand the data flow, and trace it to the code in under 5 minutes.
 
 ---
 
-## Open Questions (resolved before implementation)
+## Decisions (locked)
 
-1. **CLAUDE_API_KEY on home server** — is it set? If not, Sauron falls
-   back to regex routing, which still works for GitHub audit (git patterns
-   match). Confirm before Phase 2.
+1. **Phase 1 and Phase 2 are separate PRs.** Infra hardening ships and is
+   verified independently before the GitHub audit feature branch opens.
 
-2. **GitHub token scopes** — needs `repo` (for private repos) and
-   `read:user`. If only tracking public repos, `public_repo` suffices.
+2. **Resume canonical path:**
+   - MacBook (source of truth): `~/Areas/admin/career/MATERIALS/Solomon_Smith_Resume.pdf`
+   - Home server (ARDA reads): `/home/solomon/Code/arda-stack/arda/data/resume/Solomon_Smith_Resume.pdf`
+   - Docker volume: `./data/resume:/app/data/resume:ro` mounted on the api and galadriel services
+   - `data/resume/` is gitignored. A one-time `scp` copies the PDF to the server on deploy. When the resume is updated, re-run the scp.
+   - PDF text extraction via `pdfplumber` (add to `pyproject.toml`). Extract once at load time; cache as plain text for LLM input.
 
-3. **Telegram chat ID** — `TELEGRAM_ALLOWED_CHAT_IDS` in `.env` should
-   already contain Solomon's personal chat ID. Confirm it's set before
-   seeding the Galadriel job.
+3. **OSS discovery (Phase 3) uses a hardcoded skills list** for the first version:
+   `["Python", "TypeScript", "FastAPI", "Redis", "LangChain", "ML", "Docker"]`.
+   Profile-driven matching deferred to Phase 4+.
 
-4. **Finrod vector store persistence** — InMemoryStore is lost on restart.
-   For Phase 2, this is acceptable (snapshot is regenerated nightly). Phase
-   3+ should evaluate whether to enable Milvus persistence or switch to a
-   Redis-backed store for snapshots.
+## Deferred Questions (Phase 3+)
+
+- **CLAUDE_API_KEY on home server** — Sauron falls back to regex routing
+  if unset. Regex already matches GitHub audit patterns, so Phase 2 is not
+  blocked. Confirm before Phase 3.
+- **GitHub token scopes** — `repo` + `read:user` for full private repo
+  tracking; `public_repo` suffices for public-only. Confirm when creating
+  the token.
+- **Telegram chat ID** — confirm `TELEGRAM_ALLOWED_CHAT_IDS` is set in
+  `.env` before seeding the Galadriel job in Phase 2 step 2.5.
+- **Finrod persistence** — InMemoryStore is lost on restart. Acceptable
+  for Phase 2 (nightly regeneration). Phase 3 evaluates Redis-backed or
+  Milvus snapshot storage.

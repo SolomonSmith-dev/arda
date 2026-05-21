@@ -50,3 +50,4 @@ redis_data/
 
 # Stray dir from tool that did not expand ~ (safe to delete manually)
 /~/
+data/resume/
