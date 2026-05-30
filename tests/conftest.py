@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("ARDA_API_KEY", "test-arda-key-ci")
+
 import pytest
 
 

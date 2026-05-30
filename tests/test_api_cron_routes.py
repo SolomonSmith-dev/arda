@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 
 import fakeredis
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 from api.routes import cron as cron_routes
 from core import redis_client as core_redis
 
-API_KEY = "arda-dev-key-2026"
+API_KEY = os.environ["ARDA_API_KEY"]
 
 
 @pytest.fixture
