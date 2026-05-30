@@ -70,8 +70,14 @@ async def test_sauron_fails_when_specialist_not_registered():
     result = await sauron.run(task)
 
     assert result.status == TaskStatus.FAILED
+    # After SPECIALIST_TOOL_MAP refactor: the graph advertises only registered
+    # specialists' tools. With no specialists registered, the mock LLM's
+    # tool_use is rejected as "unknown tool" before reaching the "not
+    # registered" check inside dispatch_tool. Either signal is acceptable
+    # evidence that Sauron failed because no specialist could service the
+    # request.
     assert "earendil" in result.error
-    assert "not registered" in result.error
+    assert "not registered" in result.error or "unknown tool" in result.error
 
 
 @pytest.mark.asyncio

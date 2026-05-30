@@ -72,12 +72,18 @@ TOMBOMBADIL_TOOL: dict[str, Any] = {
     },
 }
 
-SAURON_TOOLS: list[dict[str, Any]] = [EARENDIL_TOOL, FINROD_TOOL, TOMBOMBADIL_TOOL]
+# Single source of truth: specialist name -> tool schema.
+# Adding a new specialist requires only a new entry here.
+SPECIALIST_TOOL_MAP: dict[str, dict[str, Any]] = {
+    "earendil": EARENDIL_TOOL,
+    "finrod": FINROD_TOOL,
+    "tombombadil": TOMBOMBADIL_TOOL,
+}
 
+# Derived constants kept for backward compatibility with direct importers.
+SAURON_TOOLS: list[dict[str, Any]] = list(SPECIALIST_TOOL_MAP.values())
 TOOL_NAME_TO_SPECIALIST: dict[str, Specialist] = {
-    "earendil_execute": "earendil",
-    "finrod_query": "finrod",
-    "tombombadil_chat": "tombombadil",
+    schema["name"]: name for name, schema in SPECIALIST_TOOL_MAP.items()
 }
 
 
@@ -90,9 +96,13 @@ async def dispatch_tool(
     tool_input: dict[str, Any],
     specialists: dict[Specialist, BaseAgent],
     parent_task_id: str,
+    tool_name_to_specialist: dict[str, str] | None = None,
 ) -> AgentResult:
     """Resolve a tool_use block to the corresponding specialist call."""
-    specialist_name = TOOL_NAME_TO_SPECIALIST.get(name)
+    _map = (
+        tool_name_to_specialist if tool_name_to_specialist is not None else TOOL_NAME_TO_SPECIALIST
+    )
+    specialist_name = _map.get(name)
     if specialist_name is None:
         raise UnknownToolError(f"unknown tool: {name}")
 
