@@ -103,10 +103,8 @@ def test_github_config_fields_exist():
 
 
 def test_arda_api_key_has_no_hardcoded_default():
-    import inspect
-    from core.config import Settings
-    src = inspect.getsource(Settings)
-    assert "arda-dev-key-2026" not in src, (
-        "arda_api_key must not have a hardcoded default -- "
+    field_info = Settings.model_fields["arda_api_key"]
+    assert field_info.is_required(), (
+        "arda_api_key must be required (no default) -- "
         "remove the default so misconfigured deployments fail at startup"
     )
