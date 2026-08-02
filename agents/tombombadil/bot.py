@@ -137,10 +137,20 @@ def _guard_check(redis_client, viewer, content: str) -> str | None:
 async def _offer_pending_draft(original, sent, scope_key, viewer, redis_client) -> None:
     """If ``agent.get_response`` queued a NoteDraft, post a follow-up
     asking the message author to react ✅ to confirm the log.
+
+    Attribution uses ``draft.requester_discord_id`` (locked at push time),
+    not the current turn's ``viewer``. Concurrent mentions in the same
+    channel share one FIFO scope list; whoever's reply finishes first may
+    pop another user's draft, but only the originator can confirm it
+    (spec 5.2 / D2).
     """
     draft = draft_store.pop_pending(redis_client, scope_key)
     if draft is None:
         return
+
+    # Prefer the id stamped at extraction; fall back only for pre-D2
+    # payloads still sitting in Redis under the old schema.
+    requester_id = draft.requester_discord_id or viewer.discord_id
 
     prompt = (
         f"React {CONFIRM_EMOJI} to log **{draft.film}** ({draft.rating:g}/10) "
@@ -154,7 +164,7 @@ async def _offer_pending_draft(original, sent, scope_key, viewer, redis_client) 
             redis_client,
             confirm_msg.id,
             draft,
-            requester_discord_id=viewer.discord_id,
+            requester_discord_id=requester_id,
             scope=scope_key,
         )
         metrics.DRAFTS_OFFERED.inc()

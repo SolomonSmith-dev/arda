@@ -16,12 +16,11 @@ behavior-spec.md across test_tom_*.py modules.
   raised by the @app_commands.describe layer) or trim the
   duplicative cases.
 
-- test_concurrent_drafts_bind_to_original_drafters and
-  test_concurrent_mentions_history_interleaves exercise SEQUENTIAL
-  on_message calls because asyncio awaits each call to completion
-  before the next runs. True concurrency demonstration (interleaved
-  coroutines via asyncio.gather, or threadpool reentrancy) would
-  require a different orchestration. D2 in the spec depends on this.
+- test_concurrent_drafts_bind_to_original_drafters uses asyncio.gather
+  to interleave two on_message coroutines (D2). Attribution is locked
+  via NoteDraft.requester_discord_id at push time.
+  test_concurrent_mentions_history_interleaves still uses sequential
+  awaits (history order, not draft attribution).
 
 - D7 onboarding xfail (test_stranger_first_contact_includes_greeting_
   and_suggestion) cannot pass under MockLLM regardless of production

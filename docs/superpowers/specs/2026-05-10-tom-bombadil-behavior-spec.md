@@ -126,7 +126,10 @@ The 14 user-visible flows. Each follows the same template (trigger / tier / inpu
 - **Examples:**
   - In: `"@Tom I just watched Stalker 10/10"`. Out (primary): conversational reply about Stalker. Out (draft): `"React ✅ to log Stalker (10/10) for Solomon Smith, or ❌ to skip."` User reacts ✅. Tom: `"OK Stalker (10/10) logged"`.
   - In: `"@Tom I rated it 5/10"` (no antecedent). Out: primary reply only — no draft (pronoun blacklist).
-- **Known delta:** The `requester_discord_id` bound to a draft is whoever the bot is currently replying to, not the original drafter. When two viewers' messages enqueue drafts concurrently in the same channel, the LIST is FIFO but the pops happen in LLM-response-finish order, so user B may see a prompt to confirm user A's rating — and if B reacts ✅, the rating gets logged under A's `canonical_name`. Spec is prescriptive: bind under the *original drafter's* discord_id so only the originator can confirm. See Section 5.2 for the corrected flow.
+- **Known delta:** None for attribution — `NoteDraft.requester_discord_id`
+  is stamped at extraction / push time and reused at bind (D2 fixed).
+  Concurrent mentions may still surface a confirmation prompt under the
+  reply that finished first, but only the originator can confirm.
 
 ### 4.2 Slash commands
 
@@ -364,7 +367,9 @@ When a stranger (no YAML entry, no `FILM_DATABASE` name match) `@`s Tom for the 
 - If two users react ✅ to the same draft, only the requester's reaction triggers `save_note` (the handler rejects non-requester reactions before calling save). The second reaction is silently ignored.
 - If the requester reacts ✅ and ❌ in quick succession, ordering determines the outcome (Discord delivers events in order). The first to land wins; the second finds the draft already deleted and exits silently.
 
-**Known delta:** None — the design is intentionally per-message, not per-channel-broadcast. Two users typing identical phrases back to back is the boundary case and it's handled by the LIST queue.
+**Known delta:** None — drafts carry `requester_discord_id` at push time
+(D2). Two users typing identical phrases back to back is the boundary
+case and it's handled by the LIST queue + per-draft requester guard.
 
 ### 5.3 Failure modes
 
@@ -464,7 +469,7 @@ Pulled together for the usability audit (sub-project C). Each entry references t
 | # | Delta | Section | Severity |
 |---|-------|---------|----------|
 | D1 | Old `[viewer]` prefix may still appear from pre-fix history entries | 4.1.1 | Low (decays in 7 days) |
-| D2 | Draft `requester_discord_id` is bound at pop time, not push time; concurrent drafts can attribute a rating to the wrong viewer if the wrong reactor confirms | 4.1.2, 5.2 | High |
+| D2 | ~~Draft `requester_discord_id` is bound at pop time~~ **Fixed** — stamped on `NoteDraft` at push; concurrent `asyncio.gather` test covers crossed FIFO pops | 4.1.2, 5.2 | ~~High~~ Done |
 | D3 | Letterboxd-imported films have no `themes`, so `suggest_for_person` only ever ranks against 3 seeded films | 4.2.2, 4.2.4 | Med |
 | D4 | Galadriel container off → watch-party + daily sync inert | 4.2.5, 4.3.1, 4.3.2 | Med (operator action) |
 | D5 | Milvus standalone profile not running → long-term facts evaporate on container recreate | 4.4.1 | Med (operator action) |

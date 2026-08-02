@@ -12,7 +12,10 @@ Two key namespaces:
 - ``tom:drafts:scope:{scope_key}`` LIST  -- handoff from
   ``agent.get_response`` to ``bot.on_message``. The agent doesn't know
   the follow-up message id (the reply hasn't been sent yet), so it
-  pushes drafts here. The bot pops, posts, and re-keys.
+  pushes drafts here. The bot pops, posts, and re-keys. Each
+  :class:`NoteDraft` carries ``requester_discord_id`` stamped at push
+  time so a crossed FIFO pop under concurrent mentions cannot rebind
+  the draft to the wrong viewer (spec 5.2 / D2).
 - ``tom:draft:{message_id}`` HASH  -- one pending draft awaiting
   confirmation. Expires after 24h so stale drafts don't accumulate.
 """

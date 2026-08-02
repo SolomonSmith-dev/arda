@@ -40,6 +40,7 @@ def test_rated_phrasing_produces_note_draft():
     assert draft.film.lower().startswith("inception")
     assert draft.rating == 9.0
     assert draft.viewer == "Solomon Smith"
+    assert draft.requester_discord_id == "111"
 
 
 def test_remember_that_pattern_captures_free_fact():

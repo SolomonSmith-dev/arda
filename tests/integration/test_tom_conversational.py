@@ -249,24 +249,30 @@ async def test_concurrent_drafts_bind_to_original_drafters(
     identity_yaml, fake_redis, fake_bot_user, solomon, brian, guild_channel
 ):
     """Spec 4.1.2 / 5.2: when Solomon and Brian draft ratings in the
-    same channel, each draft binds under its own drafter's discord_id.
-
-    Limitation: SEQUENTIAL await calls only -- see
-    tests/integration/__init__.py "Known limitations" for the full caveat.
+    same channel concurrently, each draft binds under its own
+    drafter's discord_id even if the FIFO scope list is popped in a
+    crossed order (asyncio.gather interleaves the two on_message
+    coroutines).
     """
-    await _send_mention(
-        guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
-    )
-    await _send_mention(
-        guild_channel, brian, "I rated Ran 9/10", bot_user=fake_bot_user
+    import asyncio
+
+    await asyncio.gather(
+        _send_mention(
+            guild_channel, solomon, "I rated Stalker 10/10", bot_user=fake_bot_user
+        ),
+        _send_mention(
+            guild_channel, brian, "I rated Ran 9/10", bot_user=fake_bot_user
+        ),
     )
     drafts = sorted(int(k.split(":")[-1]) for k in fake_redis.keys("tom:draft:*"))
     # Two drafts in flight.
     assert len(drafts) == 2
-    # Each draft's requester_discord_id matches the drafter's id, not
-    # the other user's.
+    # Each draft's requester_discord_id matches the film's originator,
+    # not whichever reply finished first.
     d0 = fake_redis.hgetall(f"tom:draft:{drafts[0]}")
     d1 = fake_redis.hgetall(f"tom:draft:{drafts[1]}")
     by_film = {d["film"]: d for d in (d0, d1)}
     assert by_film["Stalker"]["requester_discord_id"] == str(solomon.id)
     assert by_film["Ran"]["requester_discord_id"] == str(brian.id)
+    assert by_film["Stalker"]["viewer"] == "Solomon Smith"
+    assert by_film["Ran"]["viewer"] == "Brian"

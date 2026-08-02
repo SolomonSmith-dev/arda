@@ -11,7 +11,7 @@ The Tom Bombadil bot ships in production with [70 passing integration tests](../
 
 ## Severity distribution
 
-- **High:** 1 (D2 -- draft binding cross-attribution risk)
+- **High:** 0 open (D2 draft binding — fixed; stamped `requester_discord_id` at push)
 - **Medium:** 4 (D3 Letterboxd themes, D4 Galadriel down, D5 Milvus down, D7 stranger onboarding)
 - **Low:** 6 (D1 viewer-prefix decay, D6 /setpref, D8 LLM retry, D9 /unrate, D10 admin slashes, I1 test duplication)
 
@@ -20,7 +20,7 @@ The Tom Bombadil bot ships in production with [70 passing integration tests](../
 | # | Title | Severity | Spec ref | GitHub issue |
 |---|-------|----------|----------|-------------|
 | D1 | `[viewer]` prefix may persist in stored assistant-turn history | Low | Section 4.1.1 | [#18](https://github.com/SolomonSmith-dev/arda/issues/18) |
-| D2 | Draft binding may attribute rating to wrong viewer under concurrent drafts | High | Section 4.1.2, 5.2 | [#19](https://github.com/SolomonSmith-dev/arda/issues/19) |
+| D2 | Draft binding may attribute rating to wrong viewer under concurrent drafts | ~~High~~ **Fixed** | Section 4.1.2, 5.2 | [#19](https://github.com/SolomonSmith-dev/arda/issues/19) |
 | D3 | Letterboxd-imported films missing themes, breaking /recommend ranking | Medium | Section 4.2.2, 4.2.4 | [#20](https://github.com/SolomonSmith-dev/arda/issues/20) |
 | D4 | Galadriel cron container not running in production, blocking scheduled jobs | Medium | Section 4.2.5, 4.3.1, 4.3.2 | [#21](https://github.com/SolomonSmith-dev/arda/issues/21) |
 | D5 | Milvus standalone not running, Finrod falls back to volatile InMemoryStore | Medium | Section 4.4.1 | [#22](https://github.com/SolomonSmith-dev/arda/issues/22) |
@@ -35,7 +35,7 @@ The body of each issue contains the current behavior, desired behavior, fix sket
 
 ## Recommended fix order
 
-1. **D2** (High) -- investigate first; if the race is unreachable, downgrade the severity; if it is reachable, fix before adding more concurrency.
+1. ~~**D2** (High)~~ — fixed: `requester_discord_id` stamped at push; `asyncio.gather` test covers crossed FIFO pops.
 2. **D4 + D5** (operator) -- bring up Galadriel + Milvus containers; activates inert PR 4 / PR 5 work.
 3. **D7** (Medium) -- implement templated onboarding so the integration suite has another non-xfail assertion.
 4. **D3** (Medium) -- enrich Letterboxd merge with themes so `/recommend` becomes useful for the owner.
