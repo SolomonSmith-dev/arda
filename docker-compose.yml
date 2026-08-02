@@ -5,7 +5,7 @@ services:
     # Publish the new compose-internal Redis on 6380 to avoid collision.
     # API + worker still talk to it as redis:6379 over the compose network.
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
