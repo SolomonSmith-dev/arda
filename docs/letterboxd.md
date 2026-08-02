@@ -67,8 +67,10 @@ export into `data/letterboxd/` (overwriting the old CSVs) and
 
 - The merge is in-memory; it does **not** write into Redis film stats
   (those are reserved for `Film: X / Rating: 8` Discord submissions).
-- Themes are inferred from Letterboxd `Tags` only — no NLP on the review
-  text. The "preferred_themes" field on your person profile stays empty
-  unless you tag films in Letterboxd.
+- Themes come from Letterboxd `Tags` first, then a lightweight keyword
+  scan of title + review text. Every imported film gets at least one
+  theme (fallback: `cinema`). The viewer's `preferred_themes` is
+  derived from those film themes (rating-weighted) so `/recommend`
+  can rank against imported history without manual tagging.
 - Existing watcher entries with the same name in the seed `FILM_DATABASE`
   are *updated* (not duplicated) by your import.

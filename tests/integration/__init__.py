@@ -22,8 +22,7 @@ behavior-spec.md across test_tom_*.py modules.
   test_concurrent_mentions_history_interleaves still uses sequential
   awaits (history order, not draft attribution).
 
-- D7 onboarding xfail (test_stranger_first_contact_includes_greeting_
-  and_suggestion) cannot pass under MockLLM regardless of production
-  code, because MockLLM does not follow system prompt instructions.
-  Real-LLM or templated-reply driving is required.
+- D7 stranger onboarding is covered by
+  test_stranger_first_contact_includes_greeting_and_suggestion (templated
+  first-contact path; no longer xfail).
 """

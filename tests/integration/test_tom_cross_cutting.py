@@ -60,16 +60,6 @@ async def test_dm_history_isolated_from_channel(
     assert all("private question" not in t.content for t in ch_turns)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "D7: stranger onboarding paragraph not specialised. This test can "
-        "only pass against a real LLM that follows the onboarding system "
-        "prompt; under MockLLM the assertions fail regardless of the code "
-        "path. Strict-xfail until D7 ships AND a non-mock LLM (or a "
-        "templated onboarding response) drives this branch."
-    ),
-)
 @pytest.mark.asyncio
 async def test_stranger_first_contact_includes_greeting_and_suggestion(
     identity_yaml, fake_redis, fake_bot_user, stranger, guild_channel
@@ -89,6 +79,25 @@ async def test_stranger_first_contact_includes_greeting_and_suggestion(
     assert "film" in reply or "club" in reply
     assert "/whoami" in reply or "what you've been watching" in reply or "tell me" in reply
 
+
+@pytest.mark.asyncio
+async def test_stranger_second_contact_skips_onboarding_template(
+    identity_yaml, fake_redis, fake_bot_user, stranger, guild_channel
+):
+    """Spec 5.1: only the first stranger turn is templated; later turns
+    go through the normal (mock) LLM path."""
+    from agents.tombombadil import bot as tom_bot
+    from tests.integration.conftest import make_message
+
+    content = f"<@{fake_bot_user.id}> hi"
+    msg1 = make_message(stranger, guild_channel, content, mentions=[fake_bot_user])
+    await tom_bot.on_message(msg1)
+    assert "/whoami" in msg1.reply_log[0]
+
+    msg2 = make_message(stranger, guild_channel, content, mentions=[fake_bot_user])
+    await tom_bot.on_message(msg2)
+    # MockLLM returns a generic reply, not the onboarding template.
+    assert "/whoami" not in msg2.reply_log[0]
 
 @pytest.mark.asyncio
 async def test_llm_timeout_returns_canned_no_history(
