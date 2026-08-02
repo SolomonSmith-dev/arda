@@ -92,3 +92,11 @@ def test_logger_smokes():
     new_trace_id()
     log = get_logger("smoke")
     log.info("hello", x=1)
+
+
+def test_github_config_fields_exist():
+    from core.config import Settings
+    s = Settings()
+    assert hasattr(s, "github_token")
+    assert hasattr(s, "github_username")
+    assert s.github_username == "SolomonSmith-dev"  # default
