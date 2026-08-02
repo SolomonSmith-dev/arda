@@ -473,11 +473,11 @@ Pulled together for the usability audit (sub-project C). Each entry references t
 | D3 | Letterboxd-imported films have no `themes`, so `suggest_for_person` only ever ranks against 3 seeded films | 4.2.2, 4.2.4 | Med |
 | D4 | Galadriel container off → watch-party + daily sync inert | 4.2.5, 4.3.1, 4.3.2 | Med (operator action) |
 | D5 | Milvus standalone profile not running → long-term facts evaporate on container recreate | 4.4.1 | Med (operator action) |
-| D6 | No `/setpref` for explicit pref control | 4.4.2 | Low |
+| D6 | No `/setpref` for explicit pref control | 4.4.2 | ~~Low~~ Done |
 | D7 | Stranger onboarding paragraph not specialised — strangers get generic film-aware reply | 5.1 | Med |
-| D8 | LLM has no retry-with-backoff; transient Groq blips surface as user-visible failures | 5.3 | Low |
-| D9 | No self-service note deletion (no `/unrate`) | 5.4 | Low |
-| D10 | No admin slash commands (`/ban`, `/sync`) gated to owner tier | 5.5 | Low |
+| D8 | LLM has no retry-with-backoff; transient Groq blips surface as user-visible failures | 5.3 | ~~Low~~ Done |
+| D9 | No self-service note deletion (no `/unrate`) | 5.4 | ~~Low~~ Done |
+| D10 | No admin slash commands (`/ban`, `/sync`) gated to owner tier | 5.5 | ~~Low~~ Done |
 
 The audit (sub-project C) will turn each row into a GitHub issue with an owner and a fix sketch.
 

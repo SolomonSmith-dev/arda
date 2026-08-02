@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from agents.tombombadil import club, memory, metrics
+from agents.tombombadil import club, guards, memory, metrics
 from agents.tombombadil.film_knowledge import FilmKnowledge
-from agents.tombombadil.identity import Tier, Viewer
-from agents.tombombadil.persistent_memory import save_note
+from agents.tombombadil.identity import Tier, Viewer, set_role_override
+from agents.tombombadil.persistent_memory import delete_note, save_note
 from core.logging import get_logger
 
 if TYPE_CHECKING:
@@ -147,6 +147,108 @@ def cmd_whoami(viewer: Viewer) -> str:
     )
 
 
+def cmd_setpref(redis_client, viewer: Viewer, key: str, value: str) -> str:
+    """``/setpref key:<name> value:<value>`` — explicit pref control (D6)."""
+    key = (key or "").strip()
+    value = (value or "").strip()
+    if key not in memory.PREF_KEYS:
+        allowed = ", ".join(sorted(memory.PREF_KEYS))
+        return f"Unknown pref `{key}`. Allowed: {allowed}."
+    if value.lower() in ("", "clear", "unset"):
+        memory.clear_pref(redis_client, viewer.discord_id, key)
+        return f"Cleared `{key}`."
+    memory.set_pref(redis_client, viewer.discord_id, key, value)
+    return f"Set `{key}` = `{value}`."
+
+
+def cmd_unrate(redis_client, viewer: Viewer, film: str) -> str:
+    """``/unrate film:<title>`` — delete the most recent note (D9)."""
+    if not viewer.canonical_name:
+        return (
+            "I don't have a canonical name for you yet, so I can't remove "
+            "a rating. Ask Solomon to add you to data/tombombadil/identity.yaml."
+        )
+    ok, msg = delete_note(redis_client, film=film, watcher=viewer.canonical_name)
+    if ok:
+        return f"Removed **{film.strip()}** for {viewer.canonical_name}."
+    return msg
+
+
+def _require_owner(viewer: Viewer) -> str | None:
+    if viewer.is_owner:
+        return None
+    return "Owner only."
+
+
+def cmd_ban(redis_client, viewer: Viewer, discord_id: str) -> str:
+    """``/ban id:<discord_id>`` — owner-only (D10)."""
+    if err := _require_owner(viewer):
+        return err
+    target = (discord_id or "").strip()
+    if not target:
+        return "Discord id is required."
+    guards.ban(redis_client, target)
+    return f"Banned `{target}`."
+
+
+def cmd_unban(redis_client, viewer: Viewer, discord_id: str) -> str:
+    """``/unban id:<discord_id>`` — owner-only (D10)."""
+    if err := _require_owner(viewer):
+        return err
+    target = (discord_id or "").strip()
+    if not target:
+        return "Discord id is required."
+    guards.unban(redis_client, target)
+    return f"Unbanned `{target}`."
+
+
+def cmd_sync(redis_client, viewer: Viewer) -> str:
+    """``/sync`` — owner-only Letterboxd RSS sync + cron seed (D10)."""
+    if err := _require_owner(viewer):
+        return err
+    from agents.tombombadil.sync_job import ensure_letterboxd_sync_cron, run_sync
+
+    ensure_letterboxd_sync_cron(redis_client)
+    result = run_sync(redis_client)
+    return (
+        f"Sync complete: fetched={result.fetched} new={result.new} "
+        f"skipped={result.skipped} saved={result.saved} "
+        f"errors={len(result.errors)}. Daily cron ensured."
+    )
+
+
+def cmd_setrole(
+    redis_client,
+    viewer: Viewer,
+    discord_id: str,
+    tier: str,
+    canonical_name: str | None = None,
+) -> str:
+    """``/setrole id:<discord_id> tier:<solomon|regular|stranger>`` (D10)."""
+    if err := _require_owner(viewer):
+        return err
+    target = (discord_id or "").strip()
+    if not target:
+        return "Discord id is required."
+    tier_raw = (tier or "").strip().lower()
+    try:
+        new_tier = Tier(tier_raw)
+    except ValueError:
+        return "Tier must be one of: solomon, regular, stranger."
+    name = (canonical_name or "").strip() or None
+    if new_tier is not Tier.STRANGER and not name:
+        return "canonical_name is required for solomon/regular tiers."
+    set_role_override(
+        redis_client,
+        target,
+        tier=new_tier,
+        canonical_name=name,
+    )
+    if new_tier is Tier.STRANGER:
+        return f"Set `{target}` → stranger (override)."
+    return f"Set `{target}` → {new_tier.value} as **{name}** (override)."
+
+
 def register_commands(bot: commands.Bot) -> None:
     """Bind ``cmd_*`` functions to the bot's app-command tree.
 
@@ -160,20 +262,22 @@ def register_commands(bot: commands.Bot) -> None:
     from agents.tombombadil.identity import resolve as resolve_viewer
     from core.redis_client import get_redis_sync
 
+    def _viewer(interaction: discord.Interaction) -> Viewer:
+        redis = get_redis_sync()
+        return resolve_viewer(str(interaction.user.id), str(interaction.user), redis=redis)
+
     @bot.tree.command(name="rate", description="Log a film rating to the club store")
     @app_commands.describe(film="Film title", rating="Rating 0-10 (decimals OK)")
     async def _rate(interaction: discord.Interaction, film: str, rating: float):
         metrics.SLASH_COMMANDS.labels(name="rate").inc()
-        viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
-        reply = cmd_rate(get_redis_sync(), viewer, film, rating)
+        reply = cmd_rate(get_redis_sync(), _viewer(interaction), film, rating)
         await interaction.response.send_message(reply, ephemeral=False)
 
     @bot.tree.command(name="recommend", description="Get a film recommendation")
     @app_commands.describe(for_name="Recommend for someone else (optional)")
     async def _recommend(interaction: discord.Interaction, for_name: str | None = None):
         metrics.SLASH_COMMANDS.labels(name="recommend").inc()
-        viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
-        reply = cmd_recommend(viewer, for_name)
+        reply = cmd_recommend(_viewer(interaction), for_name)
         await interaction.response.send_message(reply, ephemeral=False)
 
     club_group = app_commands.Group(name="club", description="Film club aggregates and scheduling")
@@ -198,7 +302,7 @@ def register_commands(bot: commands.Bot) -> None:
     )
     async def _club_schedule(interaction: discord.Interaction, film: str, when: str):
         metrics.SLASH_COMMANDS.labels(name="club_schedule").inc()
-        viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
+        viewer = _viewer(interaction)
         reply = club.cmd_club_schedule(
             get_redis_sync(),
             _film_knowledge,
@@ -215,7 +319,7 @@ def register_commands(bot: commands.Bot) -> None:
     @app_commands.describe(scope="What to wipe: short | long | prefs | all")
     async def _forget(interaction: discord.Interaction, scope: str):
         metrics.SLASH_COMMANDS.labels(name="forget").inc()
-        viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
+        viewer = _viewer(interaction)
         scope_key = memory_mod.history_scope_key(interaction)
         reply = await cmd_forget(get_redis_sync(), viewer, scope_key, scope)
         await interaction.response.send_message(reply, ephemeral=True)
@@ -223,7 +327,66 @@ def register_commands(bot: commands.Bot) -> None:
     @bot.tree.command(name="whoami", description="Show how Tom sees you")
     async def _whoami(interaction: discord.Interaction):
         metrics.SLASH_COMMANDS.labels(name="whoami").inc()
-        viewer = resolve_viewer(str(interaction.user.id), str(interaction.user))
-        await interaction.response.send_message(cmd_whoami(viewer), ephemeral=True)
+        await interaction.response.send_message(cmd_whoami(_viewer(interaction)), ephemeral=True)
 
-    log.info("slash_commands_registered", count=5)
+    @bot.tree.command(name="setpref", description="Set a personal preference")
+    @app_commands.describe(
+        key="Preference key (suppress_films | preferred_tone | do_not_log)",
+        value="Value to set, or 'clear' to unset",
+    )
+    async def _setpref(interaction: discord.Interaction, key: str, value: str):
+        metrics.SLASH_COMMANDS.labels(name="setpref").inc()
+        reply = cmd_setpref(get_redis_sync(), _viewer(interaction), key, value)
+        await interaction.response.send_message(reply, ephemeral=True)
+
+    @bot.tree.command(name="unrate", description="Remove your most recent rating for a film")
+    @app_commands.describe(film="Film title to remove")
+    async def _unrate(interaction: discord.Interaction, film: str):
+        metrics.SLASH_COMMANDS.labels(name="unrate").inc()
+        reply = cmd_unrate(get_redis_sync(), _viewer(interaction), film)
+        await interaction.response.send_message(reply, ephemeral=True)
+
+    @bot.tree.command(name="ban", description="Ban a Discord user from Tom (owner only)")
+    @app_commands.describe(discord_id="Target Discord user id")
+    async def _ban(interaction: discord.Interaction, discord_id: str):
+        metrics.SLASH_COMMANDS.labels(name="ban").inc()
+        reply = cmd_ban(get_redis_sync(), _viewer(interaction), discord_id)
+        await interaction.response.send_message(reply, ephemeral=True)
+
+    @bot.tree.command(name="unban", description="Unban a Discord user (owner only)")
+    @app_commands.describe(discord_id="Target Discord user id")
+    async def _unban(interaction: discord.Interaction, discord_id: str):
+        metrics.SLASH_COMMANDS.labels(name="unban").inc()
+        reply = cmd_unban(get_redis_sync(), _viewer(interaction), discord_id)
+        await interaction.response.send_message(reply, ephemeral=True)
+
+    @bot.tree.command(name="sync", description="Run Letterboxd RSS sync now (owner only)")
+    async def _sync(interaction: discord.Interaction):
+        metrics.SLASH_COMMANDS.labels(name="sync").inc()
+        await interaction.response.defer(ephemeral=True)
+        reply = cmd_sync(get_redis_sync(), _viewer(interaction))
+        await interaction.followup.send(reply, ephemeral=True)
+
+    @bot.tree.command(name="setrole", description="Override a user's club tier (owner only)")
+    @app_commands.describe(
+        discord_id="Target Discord user id",
+        tier="solomon | regular | stranger",
+        canonical_name="Canonical club name (required for solomon/regular)",
+    )
+    async def _setrole(
+        interaction: discord.Interaction,
+        discord_id: str,
+        tier: str,
+        canonical_name: str | None = None,
+    ):
+        metrics.SLASH_COMMANDS.labels(name="setrole").inc()
+        reply = cmd_setrole(
+            get_redis_sync(),
+            _viewer(interaction),
+            discord_id,
+            tier,
+            canonical_name,
+        )
+        await interaction.response.send_message(reply, ephemeral=True)
+
+    log.info("slash_commands_registered", count=12)

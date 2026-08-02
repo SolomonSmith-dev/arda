@@ -169,3 +169,77 @@ def test_cmd_whoami_stranger():
     reply = tom_commands.cmd_whoami(STRANGER)
     assert "stranger" in reply.lower()
     assert "not yet mapped" in reply.lower()
+
+
+# ----- /setpref (D6) -------------------------------------------------
+
+def test_cmd_setpref_sets_valid_key(r):
+    reply = tom_commands.cmd_setpref(r, BRIAN, "suppress_films", "1")
+    assert "Set" in reply
+    assert memory.get_prefs(r, BRIAN.discord_id)["suppress_films"] == "1"
+
+
+def test_cmd_setpref_rejects_unknown_key(r):
+    reply = tom_commands.cmd_setpref(r, BRIAN, "not_a_real_pref", "1")
+    assert "Unknown pref" in reply
+    assert memory.get_prefs(r, BRIAN.discord_id) == {}
+
+
+def test_cmd_setpref_clear_unsets(r):
+    memory.set_pref(r, BRIAN.discord_id, "suppress_films", "1")
+    reply = tom_commands.cmd_setpref(r, BRIAN, "suppress_films", "clear")
+    assert "Cleared" in reply
+    assert "suppress_films" not in memory.get_prefs(r, BRIAN.discord_id)
+
+
+# ----- /unrate (D9) --------------------------------------------------
+
+def test_cmd_unrate_removes_note(r):
+    tom_commands.cmd_rate(r, SOLOMON, "Inception", 9)
+    assert r.sismember("films", "Inception")
+    reply = tom_commands.cmd_unrate(r, SOLOMON, "Inception")
+    assert "Removed" in reply
+    assert r.zcard("notes:all") == 0
+    assert not r.sismember("films", "Inception")
+    # Re-rate same week should succeed after unique-key clear.
+    reply2 = tom_commands.cmd_rate(r, SOLOMON, "Inception", 7)
+    assert "OK" in reply2
+
+
+def test_cmd_unrate_missing_note(r):
+    reply = tom_commands.cmd_unrate(r, SOLOMON, "Nonexistent Film")
+    assert "No note found" in reply
+
+
+def test_cmd_unrate_rejects_stranger(r):
+    reply = tom_commands.cmd_unrate(r, STRANGER, "Inception")
+    assert "canonical name" in reply
+
+
+# ----- admin (D10) ---------------------------------------------------
+
+def test_cmd_ban_owner_only(r):
+    refused = tom_commands.cmd_ban(r, BRIAN, "999")
+    assert "Owner only" in refused
+    assert not r.sismember("tom:bans", "999")
+
+    ok = tom_commands.cmd_ban(r, SOLOMON, "999")
+    assert "Banned" in ok
+    assert r.sismember("tom:bans", "999")
+
+    un = tom_commands.cmd_unban(r, SOLOMON, "999")
+    assert "Unbanned" in un
+    assert not r.sismember("tom:bans", "999")
+
+
+def test_cmd_setrole_override(r):
+    refused = tom_commands.cmd_setrole(r, BRIAN, "555", "regular", "Wes")
+    assert "Owner only" in refused
+
+    ok = tom_commands.cmd_setrole(r, SOLOMON, "555", "regular", "Wes Prater")
+    assert "regular" in ok
+    from agents.tombombadil.identity import resolve
+
+    viewer = resolve("555", "someone", redis=r)
+    assert viewer.tier is Tier.REGULAR
+    assert viewer.canonical_name == "Wes Prater"

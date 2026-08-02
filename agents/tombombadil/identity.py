@@ -31,6 +31,7 @@ from core.logging import get_logger
 log = get_logger("agents.tombombadil.identity")
 
 _DEFAULT_CONFIG_PATH = Path("/app/data/tombombadil/identity.yaml")
+_ROLE_OVERRIDE_KEY = "tom:identity:{discord_id}"
 
 
 class Tier(StrEnum):
@@ -117,10 +118,65 @@ def _match_film_db_by_name(name: str) -> str | None:
     return None
 
 
-def resolve(discord_id: str, discord_name: str) -> Viewer:
+def _role_override_key(discord_id: str) -> str:
+    return _ROLE_OVERRIDE_KEY.format(discord_id=str(discord_id).strip())
+
+
+def get_role_override(redis, discord_id: str) -> tuple[Tier, str | None] | None:
+    """Return a Redis role override ``(tier, canonical_name)`` or ``None``."""
+    if redis is None:
+        return None
+    try:
+        raw = redis.hgetall(_role_override_key(discord_id)) or {}
+    except Exception as exc:
+        log.warning("role_override_read_failed", discord_id=discord_id, exc=str(exc))
+        return None
+    if not raw:
+        return None
+    data: dict[str, str] = {}
+    for k, v in raw.items():
+        if isinstance(k, bytes):
+            k = k.decode("utf-8")
+        if isinstance(v, bytes):
+            v = v.decode("utf-8")
+        data[str(k)] = str(v)
+    tier_raw = (data.get("tier") or "").strip().lower()
+    try:
+        tier = Tier(tier_raw)
+    except ValueError:
+        return None
+    canonical = (data.get("canonical_name") or "").strip() or None
+    if tier is Tier.STRANGER:
+        canonical = None
+    return tier, canonical
+
+
+def set_role_override(
+    redis,
+    discord_id: str,
+    *,
+    tier: Tier,
+    canonical_name: str | None = None,
+) -> None:
+    """Persist a runtime identity override (used by ``/setrole``)."""
+    discord_id = str(discord_id).strip()
+    mapping = {"tier": tier.value}
+    if tier is Tier.STRANGER:
+        mapping["canonical_name"] = ""
+    else:
+        mapping["canonical_name"] = (canonical_name or "").strip()
+    redis.hset(_role_override_key(discord_id), mapping=mapping)
+
+
+def clear_role_override(redis, discord_id: str) -> None:
+    redis.delete(_role_override_key(str(discord_id).strip()))
+
+
+def resolve(discord_id: str, discord_name: str, redis=None) -> Viewer:
     """Resolve a Discord author to a :class:`Viewer`.
 
     Resolution order:
+    0. Redis ``/setrole`` override (when ``redis`` is provided).
     1. YAML owner entry (by discord_id) -> ``Tier.SOLOMON``.
     2. YAML regulars entry (by discord_id) -> ``Tier.REGULAR``.
     3. Case-insensitive name match against ``FILM_DATABASE['people']``.
@@ -130,6 +186,12 @@ def resolve(discord_id: str, discord_name: str) -> Viewer:
     """
     discord_id = str(discord_id).strip()
     discord_name = str(discord_name).strip()
+
+    override = get_role_override(redis, discord_id)
+    if override is not None:
+        tier, canonical = override
+        return Viewer(discord_id, discord_name, canonical, tier)
+
     cfg = _load_config()
 
     if cfg.owner_id and discord_id == cfg.owner_id:
