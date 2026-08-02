@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     # Mock embedder (skips torch + sentence-transformers download).
     # Defaults to mirroring use_mock_llm so dev stays zero-cost; set
     # USE_MOCK_EMBEDDER=true explicitly on weak hosts to keep real
-    # Groq/Gemini LLM calls while avoiding the ~1GB torch footprint.
+    # Anthropic LLM calls while avoiding the ~1GB torch footprint.
     use_mock_embedder: bool | None = None
 
     # Model overrides per tier

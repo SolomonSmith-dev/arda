@@ -2,7 +2,17 @@
 
 **Version:** 1.0  
 **Author:** Solomon Smith  
-**Status:** Pre-build — use this document as the source of truth for all implementation decisions.
+**Status:** Historical — this document captured the original pre-build intent
+(Gemini/Groq/LangChain roster, `mcp/` path, Phase 1–5 plan). It is **not**
+the source of truth anymore.
+
+For current architecture, commands, and conventions see:
+- [`README.md`](README.md) — product overview + API
+- [`CLAUDE.md`](CLAUDE.md) — agent/dev guidance
+- [`docs/decisions/`](docs/decisions/) — ADRs (including the Anthropic/LangGraph pivot)
+
+The original five build phases are complete (tagged `v1.0.0`). Remaining work
+is tracked in GitHub issues (Tom Bombadil audit deltas D2–D10, ops profiles).
 
 ---
 
@@ -11,6 +21,11 @@
 **Arda** is a unified, portfolio-ready multi-agent system. It collapses three disconnected projects (`earendil/`, `earendil-mcp/`, `tombombadil/`) into one cohesive codebase with a shared foundation, defined agent roles, a single Docker Compose stack, and one FastAPI entry point.
 
 Named after Tolkien's world. All agents are named after First Age characters.
+
+> **Note:** Sections below retain the original Gemini/Groq/LangChain plan for
+> historical context. Live code uses Anthropic (Sauron Opus, Finrod/Tom Haiku)
+> + LangGraph + LlamaIndex, and the MCP package lives at `mcp_server/` (not
+> `mcp/`). See README build history and ADR 0006.
 
 ---
 

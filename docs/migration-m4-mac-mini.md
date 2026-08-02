@@ -98,18 +98,15 @@ chmod 600 .env
 
 # Move secrets into Keychain (one-time)
 security add-generic-password -a arda -s arda-api-key  -w "$(openssl rand -hex 32)"
-security add-generic-password -a arda -s gemini-api-key -w   # paste your key
-security add-generic-password -a arda -s groq-api-key   -w   # paste your key
+security add-generic-password -a arda -s anthropic-api-key -w   # paste your key
 # Optional: discord-token, tmdb-api-key
 
 # Patch .env from Keychain
 ARDA_KEY=$(security find-generic-password -a arda -s arda-api-key -w)
-GEMINI=$(security find-generic-password -a arda -s gemini-api-key -w)
-GROQ=$(security find-generic-password -a arda -s groq-api-key -w)
-sed -i '' "s|^ARDA_API_KEY=.*|ARDA_API_KEY=${ARDA_KEY}|"   .env
-sed -i '' "s|^GEMINI_API_KEY=.*|GEMINI_API_KEY=${GEMINI}|" .env
-sed -i '' "s|^GROQ_API_KEY=.*|GROQ_API_KEY=${GROQ}|"       .env
-sed -i '' "s|^USE_MOCK_LLM=.*|USE_MOCK_LLM=false|"         .env
+ANTHROPIC=$(security find-generic-password -a arda -s anthropic-api-key -w)
+sed -i '' "s|^ARDA_API_KEY=.*|ARDA_API_KEY=${ARDA_KEY}|"         .env
+sed -i '' "s|^ANTHROPIC_API_KEY=.*|ANTHROPIC_API_KEY=${ANTHROPIC}|" .env
+sed -i '' "s|^USE_MOCK_LLM=.*|USE_MOCK_LLM=false|"               .env
 
 # On the M4 we have headroom for real embeddings — flip USE_MOCK_EMBEDDER
 # off and switch the Dockerfile install line to '.[full]':
@@ -232,8 +229,10 @@ home-server:
    `MILVUS_HOST=milvus`. Falls back to in-memory store if it fails to
    come up — already handled by `core/milvus_client.py`.
 3. **LLM-based intent classifier**: Replace the keyword router in
-   `agents/sauron/planner.py:76-86` with a Gemini Flash call. Slower
-   per-request (~200ms cold) but worth it for ambiguous phrasing.
+   `agents/sauron/planner.py` with an Anthropic tool_use / Haiku call
+   if ambiguous phrasing needs better coverage than the regex `/plan`
+   helper. (Sauron's live routing already goes through LangGraph +
+   Claude Opus tool_use — this item is only about the `/plan` helper.)
 
 These should each be their own ADR + branch, not part of the
 migration itself. Migrate first, upgrade second.

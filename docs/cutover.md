@@ -13,7 +13,7 @@ from is preserved (see `api/routes/`).
 - Docker Desktop or OrbStack running (arm64).
 - `git` access to this repo, or a tarball of the source tree.
 - `.env` file populated with **`USE_MOCK_LLM=false`**, plus
-  `GEMINI_API_KEY`, `GROQ_API_KEY`, and `ARDA_API_KEY` (or
+  `ANTHROPIC_API_KEY` and `ARDA_API_KEY` (or
   `EARENDIL_API_KEY` to match the value the existing MCP client sends).
 
 ## Build

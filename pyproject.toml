@@ -1,6 +1,6 @@
 [project]
 name = "arda"
-version = "0.1.0"
+version = "0.3.0"
 description = "Multi-agent system: Sauron orchestrator, Earendil executor, Finrod retriever, Tom Bombadil specialist."
 authors = [{ name = "Solomon Smith" }]
 requires-python = ">=3.12"

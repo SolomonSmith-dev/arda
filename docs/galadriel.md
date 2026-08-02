@@ -81,7 +81,9 @@ curl -s -X POST http://localhost:5000/cron \
 2. The Galadriel worker polls `cron:queue` every 5 seconds.
 3. Due jobs are claimed atomically (`ZRANGEBYSCORE` + `ZREM`) so two workers can't double-fire.
 4. For `agentTurn` payloads, the worker POSTs to `/execute/wait` with the message; for `systemEvent` payloads, it just logs.
-5. `announce` delivery is currently a stub (logs only). Once the Telegram agent ships, this hook plugs in.
+5. `announce` delivery is currently a stub (logs only). Real outbound
+   delivery uses `delivery.mode="telegram"` (Gwaihir) or
+   `delivery.mode="discord"` (Tom Bombadil's delivery subscriber).
 6. The worker writes back `last_run_at_ms`, `last_status`, `last_duration_ms`, `consecutive_errors`, then either re-queues (cron) or retires (at).
 
 ## Troubleshooting

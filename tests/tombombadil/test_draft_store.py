@@ -12,8 +12,19 @@ def r():
     return fakeredis.FakeRedis(decode_responses=True)
 
 
-def _draft(film: str = "Inception", rating: float = 8.0, viewer: str = "Solomon Smith") -> NoteDraft:
-    return NoteDraft(film=film, rating=rating, viewer=viewer, raw="I rated " + film + " " + str(rating))
+def _draft(
+    film: str = "Inception",
+    rating: float = 8.0,
+    viewer: str = "Solomon Smith",
+    requester_discord_id: str = "111",
+) -> NoteDraft:
+    return NoteDraft(
+        film=film,
+        rating=rating,
+        viewer=viewer,
+        raw="I rated " + film + " " + str(rating),
+        requester_discord_id=requester_discord_id,
+    )
 
 
 def test_push_then_pop_roundtrip(r):
@@ -23,6 +34,22 @@ def test_push_then_pop_roundtrip(r):
     assert popped.film == "Inception"
     assert popped.rating == 8.0
     assert popped.viewer == "Solomon Smith"
+    assert popped.requester_discord_id == "111"
+
+
+def test_pop_preserves_requester_discord_id_across_push(r):
+    """D2: discord_id is locked onto the draft at push, not at bind."""
+    draft_store.push_pending(
+        r, "x", _draft("Stalker", 10.0, "Solomon Smith", requester_discord_id="111")
+    )
+    draft_store.push_pending(
+        r, "x", _draft("Ran", 9.0, "Brian", requester_discord_id="222")
+    )
+    first = draft_store.pop_pending(r, "x")
+    second = draft_store.pop_pending(r, "x")
+    assert first is not None and second is not None
+    assert first.film == "Stalker" and first.requester_discord_id == "111"
+    assert second.film == "Ran" and second.requester_discord_id == "222"
 
 
 def test_pop_on_empty_returns_none(r):

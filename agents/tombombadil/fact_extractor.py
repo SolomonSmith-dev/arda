@@ -32,6 +32,10 @@ class NoteDraft:
     rating: float
     viewer: str
     raw: str = ""
+    # Locked at extraction / push time so concurrent `_offer_pending_draft`
+    # pops cannot re-attribute the draft to whoever's reply finished first
+    # (spec 5.2 / D2). Empty only for pre-fix payloads still in Redis.
+    requester_discord_id: str = ""
 
 
 @dataclass
@@ -138,7 +142,13 @@ def extract(user_text: str, bot_reply: str, viewer: Viewer) -> ExtractedFacts:
             rating = max(0.0, min(10.0, rating))
             if viewer.canonical_name:
                 facts.notes.append(
-                    NoteDraft(film=film, rating=rating, viewer=viewer.canonical_name, raw=match.group(0))
+                    NoteDraft(
+                        film=film,
+                        rating=rating,
+                        viewer=viewer.canonical_name,
+                        raw=match.group(0),
+                        requester_discord_id=viewer.discord_id,
+                    )
                 )
 
     for pattern in _REMEMBER_PATTERNS:

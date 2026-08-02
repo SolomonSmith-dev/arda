@@ -7,7 +7,8 @@ the `discord` profile. The bot:
 - when a message contains `Film: ...` and `Rating: ...`, parses it and
   saves a film note to Redis (so reruns and history stick across
   restarts);
-- otherwise generates a conversational reply via Groq.
+- otherwise generates a conversational reply via Anthropic Claude Haiku
+  (or the mock client when `USE_MOCK_LLM=true`).
 
 The HTTP-side `Tombombadil` agent class is registered with the API
 regardless of whether the Discord bot is running — `Sauron` can still
@@ -75,8 +76,8 @@ Rating: 9
 ```
 
 The bot should react with `OK Ran (9/10) logged`. Plain conversational
-messages (no `Film: / Rating:` pattern) get a short Groq-generated
-reply.
+messages (no `Film: / Rating:` pattern) get a short Claude Haiku
+reply (mocked when `USE_MOCK_LLM=true`).
 
 ## Bring it down
 

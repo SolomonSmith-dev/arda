@@ -22,7 +22,7 @@ WAIT_POLL_INTERVAL = 0.5
 
 
 def plan_task(message: str) -> dict[str, Any]:
-    """Keyword-based planner. Sub-pass 2 swaps this for a Groq LLM call."""
+    """Keyword-based planner. Intentional thin executor — no LLM call."""
     msg = message.lower().strip()
 
     if "system status" in msg:
