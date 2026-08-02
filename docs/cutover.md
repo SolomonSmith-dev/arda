@@ -95,3 +95,36 @@ The ``legacy_api/earendil_api.py`` rollback artifact has been removed; ``api/mai
   container recreate).
 - **Image size** can be trimmed later by switching to a CPU-only
   torch wheel and dropping CUDA deps from the install set.
+
+## Operator verification (D4 / D5)
+
+On the **deploy host** (Docker is required; cloud dev VMs without Docker
+cannot close these). From the repo root:
+
+```bash
+# Enable profiles
+docker compose --profile cron --profile discord up -d          # D4 (+ Tom)
+docker compose --profile milvus up -d                          # D5
+
+# .env (compose network DNS names)
+# MILVUS_HOST=milvus
+# MILVUS_PORT=19530
+# USE_MOCK_EMBEDDER=false
+# (image/build must include the [full] extra for real embeddings)
+
+# Checklist script
+./scripts/verify-d4-d5.sh
+```
+
+Manual acceptance checks (from issues #21 / #22):
+
+| Delta | Check |
+|---|---|
+| D4 | `docker compose ps galadriel` shows running |
+| D4 | `cron:queue` drains (due jobs disappear after their `at`/`cron` time) |
+| D4 | Letterboxd sync runs once (or owner `/sync`); film DB updates |
+| D5 | `docker compose ps milvus` shows running |
+| D5 | API/Tom logs show Milvus connect, not `InMemoryStore` / `pymilvus_unavailable` fallback |
+| D5 | Restart `tombombadil` / `api`; previously ingested long-term facts still recall |
+
+After both pass on the deploy host, close #21 and #22.

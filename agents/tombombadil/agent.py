@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, ClassVar
 
 from agents.base import BaseAgent
@@ -21,6 +22,10 @@ log = get_logger("agents.tombombadil.agent")
 
 MAX_REPLY_TOKENS = 1024
 LLM_TIMEOUT_SECONDS = 30
+
+# Pre-V6 / imitation leaks: assistant text starting with ``[Name] `` or
+# ``[@Name] ``. Negative lookahead skips ``[mock...]`` (dev mock replies).
+_SPEAKER_PREFIX_RE = re.compile(r"^\[@?(?!mock\b)[^\]]{1,64}\]\s+")
 
 
 _llm = build_chat_client()
@@ -162,6 +167,25 @@ def _build_system_prompt(
     return "\n\n".join(blocks)
 
 
+def _strip_leaked_speaker_prefix(content: str) -> str:
+    """Remove a leading ``[Name] `` / ``[@Name] `` tag from assistant text (D1 / V6).
+
+    New turns are stored clean; this heals pre-V6 Redis entries and any
+    fresh LLM imitation leak before history reinjection or persistence.
+    Leaves ``[mock...]`` alone so mock-mode replies stay identifiable.
+    """
+    if not content:
+        return content
+    cleaned = content
+    # Strip at most a couple of stacked prefixes (pathological history).
+    for _ in range(3):
+        nxt = _SPEAKER_PREFIX_RE.sub("", cleaned, count=1)
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    return cleaned
+
+
 def _history_messages(turns: list[memory.Turn]) -> list[dict[str, Any]]:
     """Render persisted turns as Anthropic-shaped messages
     (``{role, content}`` dicts).
@@ -171,7 +195,8 @@ def _history_messages(turns: list[memory.Turn]) -> list[dict[str, Any]]:
     ASSISTANT turns must NOT be prefixed: when the model sees its own
     prior replies wrapped in ``[Solomon Smith] ...`` it imitates that
     shape on the next response (live regression: bot replied
-    ``[@Solomon Smith] Hello Patrick!``).
+    ``[@Solomon Smith] Hello Patrick!``). Stale prefixed assistant
+    entries are stripped here so they cannot re-seed the leak (D1).
     """
     msgs: list[dict[str, Any]] = []
     for t in turns:
@@ -179,7 +204,7 @@ def _history_messages(turns: list[memory.Turn]) -> list[dict[str, Any]]:
             content = f"[{t.viewer}] {t.content}" if t.viewer else t.content
             msgs.append({"role": "user", "content": content})
         else:
-            msgs.append({"role": "assistant", "content": t.content})
+            msgs.append({"role": "assistant", "content": _strip_leaked_speaker_prefix(t.content)})
     return msgs
 
 
@@ -336,6 +361,9 @@ async def get_response(
             exception_type=type(last_exc).__name__ if last_exc else None,
         )
         return "Error processing your request"
+
+    # V6 / D1: never persist or surface a leaked speaker prefix.
+    reply = _strip_leaked_speaker_prefix(reply)
 
     try:
         memory.append_turn(redis_client, scope_key, viewer, "user", text)

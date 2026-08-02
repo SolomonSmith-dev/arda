@@ -101,7 +101,10 @@ The 14 user-visible flows. Each follows the same template (trigger / tier / inpu
     Out: `"Your tracked profile is light -- Ran is what I have. What else have you logged?"`
   - In: stranger mentions Tom, `"hi"`
     Out: `"Hey -- haven't seen you here before. Ask me about films, club nights, or what to watch."`
-- **Known delta:** Currently the LLM still occasionally leaks `[viewer]` prefix when prior assistant turns were stored under the buggy prefix-on-assistant code (pre-fix). Burning down as the affected histories age out (7-day TTL).
+- **Known delta (D1, fixed):** Pre-V6 histories could store assistant turns
+  with a `[viewer]` / `[Name]` prefix; the model then imitated that shape.
+  New code strips leaked speaker prefixes on history reinjection and before
+  persist. Remaining Redis rows also idle-expire (7-day TTL).
 
 #### 4.1.2 Note capture (loose-form + draft + confirm)
 
@@ -474,7 +477,7 @@ Pulled together for the usability audit (sub-project C). Each entry references t
 
 | # | Delta | Section | Severity |
 |---|-------|---------|----------|
-| D1 | Old `[viewer]` prefix may still appear from pre-fix history entries | 4.1.1 | Low (decays in 7 days) |
+| D1 | Old `[viewer]` prefix may still appear from pre-fix history entries | 4.1.1 | ~~Low~~ Done (strip-on-read/persist + TTL) |
 | D2 | ~~Draft `requester_discord_id` is bound at pop time~~ **Fixed** — stamped on `NoteDraft` at push; concurrent `asyncio.gather` test covers crossed FIFO pops | 4.1.2, 5.2 | ~~High~~ Done |
 | D3 | ~~Letterboxd-imported films have no `themes`~~ **Fixed** — tags + keyword inference + derived `preferred_themes` | 4.2.2, 4.2.4 | ~~Med~~ Done |
 | D4 | Galadriel container off → watch-party + daily sync inert | 4.2.5, 4.3.1, 4.3.2 | Med (operator action) |

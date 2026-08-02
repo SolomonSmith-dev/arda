@@ -110,6 +110,42 @@ async def test_history_persisted_after_response(fake_redis):
 
 
 @pytest.mark.asyncio
+async def test_leaked_speaker_prefix_stripped_before_persist(fake_redis):
+    """D1 / V6: LLM imitation of ``[Name] …`` must not land in Redis."""
+
+    async def _leaky(*, system, messages, **_kwargs):
+        return MockMessage(
+            content=[TextBlock(text="[@Solomon Smith] Hello!")],
+            stop_reason="end_turn",
+        )
+
+    with patch.object(tom_agent._llm.messages, "create", side_effect=_leaky):
+        reply = await tom_agent.get_response("tom:hist:ch:d1", "hi", SOLOMON, fake_redis)
+
+    assert reply == "Hello!"
+    turns = tom_memory.recent_turns(fake_redis, "tom:hist:ch:d1")
+    assert turns[-1].content == "Hello!"
+
+
+@pytest.mark.asyncio
+async def test_stale_prefixed_assistant_history_healed_on_read(fake_redis):
+    """D1: pre-V6 Redis assistant rows are stripped before LLM reinjection."""
+    tom_memory.append_turn(fake_redis, "tom:hist:ch:stale", SOLOMON, "user", "old")
+    tom_memory.append_turn(
+        fake_redis, "tom:hist:ch:stale", SOLOMON, "assistant", "[viewer] stale leak"
+    )
+
+    captured: dict = {}
+    with patch.object(tom_agent._llm.messages, "create", side_effect=_capture_create(captured)):
+        await tom_agent.get_response("tom:hist:ch:stale", "next", SOLOMON, fake_redis)
+
+    assistant_msgs = [m["content"] for m in captured["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs
+    assert assistant_msgs[0] == "stale leak"
+    assert "[viewer]" not in assistant_msgs[0]
+
+
+@pytest.mark.asyncio
 async def test_history_included_in_second_turn(fake_redis):
     await tom_agent.get_response("tom:hist:ch:99", "first message", SOLOMON, fake_redis)
 
