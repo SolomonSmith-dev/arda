@@ -37,24 +37,19 @@ worker + Redis) is already provisioned on the VM. The startup update script runs
 ### Already on `main`
 
 - Dev environment notes (this file) + cloud update script `uv sync --extra dev`.
-- Truth-sync + D2 draft-binding fix via [#44](https://github.com/SolomonSmith-dev/arda/pull/44):
-  `pyproject` 0.3.0, ADR 0006 (Anthropic + `mcp_server/` canonical), `NoteDraft.requester_discord_id`.
-- [#45](https://github.com/SolomonSmith-dev/arda/pull/45) D7 stranger onboarding + D3 Letterboxd themes.
-- [#46](https://github.com/SolomonSmith-dev/arda/pull/46) Tom polish D6/D8/D9/D10 + cron seed + profile docs.
-- [#47](https://github.com/SolomonSmith-dev/arda/pull/47) this handoff section (superseded by updates below as work lands).
+- Audit code burn-down complete: #44 (D2), #45 (D7/D3), #46 (D6/D8/D9/D10), #48 (I1).
+- ADR 0006 (Anthropic + `mcp_server/` canonical); `pyproject` 0.3.0.
 - Core product works mock-by-default: Sauron / Earendil / Finrod / Tom / Galadriel / Gwaihir.
 - `ARDA_SCOPE.md` is **historical** — trust README, CLAUDE.md, ADRs, and this file.
 
-### Remaining work
+### Remaining work (operator-only)
 
 | Priority | Item | Type | Notes |
 |---|---|---|---|
-| 1 | [#21 D4](https://github.com/SolomonSmith-dev/arda/issues/21) Galadriel cron | **Operator** | On deploy host: `docker compose --profile cron up -d`. Job seeded by API lifespan. Runbook: `docs/cutover.md`, `docs/tombombadil-memory.md`. |
-| 2 | [#22 D5](https://github.com/SolomonSmith-dev/arda/issues/22) Milvus | **Operator** | On deploy host: `docker compose --profile milvus up -d` + `[full]` install + `USE_MOCK_EMBEDDER=false`. Needs enough RAM. |
-| 3 | [#18 D1](https://github.com/SolomonSmith-dev/arda/issues/18) viewer-prefix decay | Code (low) | `[viewer]` prefix may persist in stored assistant-turn history. |
-| — | Mark audit deltas fixed | Docs | Keep `docs/superpowers/specs/2026-05-10-tom-bombadil-audit.md` in sync; close issues via PR `Closes` lines. |
+| 1 | [#21 D4](https://github.com/SolomonSmith-dev/arda/issues/21) Galadriel cron | **Operator** | Deploy host: `docker compose --profile cron up -d`. Runbook + `./scripts/verify-d4-d5.sh` in `docs/cutover.md`. |
+| 2 | [#22 D5](https://github.com/SolomonSmith-dev/arda/issues/22) Milvus | **Operator** | Deploy host: `docker compose --profile milvus up -d` + `[full]` + `USE_MOCK_EMBEDDER=false` + `MILVUS_HOST=milvus`. |
 
-~~[#28 I1](https://github.com/SolomonSmith-dev/arda/issues/28)~~ slash-test dedupe — fixed: integration suite drives `FakeInteraction` + `register_commands` glue.
+No further code-side Tom audit deltas are open. Cloud VMs without Docker cannot close D4/D5.
 
 ### Do not redo
 
@@ -66,9 +61,9 @@ worker + Redis) is already provisioned on the VM. The startup update script runs
 
 - Commands / architecture: `CLAUDE.md`, `README.md`
 - Tom behavior + audit: `docs/superpowers/specs/2026-05-10-tom-bombadil-behavior-spec.md`, `...-audit.md`
-- Operator profiles: `docs/cutover.md`, `docs/tombombadil-memory.md`
+- Operator profiles: `docs/cutover.md`, `docs/tombombadil-memory.md`, `scripts/verify-d4-d5.sh`
 - Decisions: `docs/decisions/` (esp. ADR 0006)
 
 ### Suggested first prompt for a successor agent
 
-> Confirm `uv run ruff check .` and `uv run pytest tests/ -q` are green on main. Then either (a) document/verify D4+D5 operator enablement on the deploy host (`docker compose --profile cron` / `milvus`), or (b) burn down #18 D1 viewer-prefix decay. Do not reopen Groq/Gemini or rename `mcp_server/`.
+> On the deploy host, enable and verify D4+D5 (`docker compose --profile cron` / `milvus`, then `./scripts/verify-d4-d5.sh`). Close #21/#22 when checks pass. Do not reopen Groq/Gemini or rename `mcp_server/`.

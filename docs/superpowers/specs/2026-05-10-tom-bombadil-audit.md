@@ -12,16 +12,16 @@ The Tom Bombadil bot ships in production with [70 passing integration tests](../
 ## Severity distribution
 
 - **High:** 0 open (D2 draft binding — fixed)
-- **Medium open:** 2 (D4 Galadriel down, D5 Milvus down — operator)
+- **Medium open:** 2 (D4 Galadriel down, D5 Milvus down — **operator on deploy host**)
 - **Medium fixed:** D3 Letterboxd themes, D7 stranger onboarding
-- **Low open:** 1 (D1 viewer-prefix decay)
-- **Low fixed:** D6 /setpref, D8 LLM retry, D9 /unrate, D10 admin slashes, I1 test duplication
+- **Low open:** 0
+- **Low fixed:** D1 viewer-prefix, D6 /setpref, D8 LLM retry, D9 /unrate, D10 admin slashes, I1 test duplication
 
 ## Issue index
 
 | # | Title | Severity | Spec ref | GitHub issue |
 |---|-------|----------|----------|-------------|
-| D1 | `[viewer]` prefix may persist in stored assistant-turn history | Low | Section 4.1.1 | [#18](https://github.com/SolomonSmith-dev/arda/issues/18) |
+| D1 | `[viewer]` prefix may persist in stored assistant-turn history | ~~Low~~ **Fixed** | Section 4.1.1 | [#18](https://github.com/SolomonSmith-dev/arda/issues/18) |
 | D2 | Draft binding may attribute rating to wrong viewer under concurrent drafts | ~~High~~ **Fixed** | Section 4.1.2, 5.2 | [#19](https://github.com/SolomonSmith-dev/arda/issues/19) |
 | D3 | Letterboxd-imported films missing themes, breaking /recommend ranking | ~~Medium~~ **Fixed** | Section 4.2.2, 4.2.4 | [#20](https://github.com/SolomonSmith-dev/arda/issues/20) |
 | D4 | Galadriel cron container not running in production, blocking scheduled jobs | Medium | Section 4.2.5, 4.3.1, 4.3.2 | [#21](https://github.com/SolomonSmith-dev/arda/issues/21) |
@@ -38,12 +38,12 @@ The body of each issue contains the current behavior, desired behavior, fix sket
 ## Recommended fix order
 
 1. ~~**D2** (High)~~ — fixed: `requester_discord_id` stamped at push; `asyncio.gather` test covers crossed FIFO pops.
-2. **D4 + D5** (operator) -- bring up Galadriel + Milvus containers; activates inert PR 4 / PR 5 work. See `docs/cutover.md` and `docs/tombombadil-memory.md`.
+2. **D4 + D5** (operator) -- on the deploy host: `docker compose --profile cron` / `milvus`; see `docs/cutover.md`, `docs/tombombadil-memory.md`, `./scripts/verify-d4-d5.sh`.
 3. ~~**D7** (Medium)~~ — fixed: templated stranger onboarding; xfail removed.
 4. ~~**D3** (Medium)~~ — fixed: Letterboxd theme enrichment + derived `preferred_themes`.
 5. ~~**I1** (Low)~~ — fixed: `FakeInteraction` drives `register_commands` glue; pure `cmd_*` stays in unit tests.
 6. ~~**D6, D8, D9, D10** (Low)~~ — fixed via Tom polish PR (#46).
-7. **D1** (Low) -- `[viewer]` prefix decay in stored assistant-turn history.
+7. ~~**D1** (Low)~~ — fixed: strip leaked speaker prefixes on history reinjection + before persist; TTL still ages out Redis rows.
 
 ## What this audit did NOT cover
 

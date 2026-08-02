@@ -47,8 +47,10 @@ Each list entry is JSON:
 - Each turn's content is prefixed with `[viewer]` when injected into
   the LLM prompt, so multi-user channel history disambiguates speakers.
 - Stored history should never include `[viewer]` prefixes on assistant
-  turns (V6). If any pre-V6 entries still contain the prefix, they
-  naturally expire within the 7-day TTL. To audit after the TTL window:
+  turns (V6). Tom strips leaked speaker prefixes when reinjecting
+  history and before persisting new replies (D1 active heal). Any
+  remaining pre-V6 Redis rows also expire within the 7-day idle TTL.
+  Optional audit after the TTL window:
 
   ```bash
   redis-cli --scan --pattern 'tom:hist:*' \
@@ -152,7 +154,8 @@ PR 3.
 ## Production profiles (D4 / D5)
 
 Default `docker compose up -d` runs Redis + API + Earendil worker only.
-Scheduled jobs and durable long-term memory need extra profiles:
+Scheduled jobs and durable long-term memory need extra profiles **on the
+deploy host**:
 
 ```bash
 # Galadriel cron (Letterboxd sync + watch-party reminders)
@@ -166,6 +169,17 @@ docker compose --profile discord up -d   # needs DISCORD_TOKEN
 docker compose --profile milvus up -d
 ```
 
-Verify: `docker compose ps galadriel` / `docker compose ps milvus`.
+`.env` for the milvus profile (compose DNS):
+
+```bash
+MILVUS_HOST=milvus
+MILVUS_PORT=19530
+USE_MOCK_EMBEDDER=false
+```
+
+Verify with `./scripts/verify-d4-d5.sh`, or manually:
+`docker compose ps galadriel` / `docker compose ps milvus`.
 Owner can force a Letterboxd sync from Discord with `/sync`.
+
+Close GitHub #21 (D4) / #22 (D5) only after the deploy-host checks pass.
 
