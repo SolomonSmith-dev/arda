@@ -62,7 +62,27 @@ def fake_redis(monkeypatch):
     r = fakeredis.FakeRedis(decode_responses=True)
     monkeypatch.setattr(tom_agent, "get_redis_sync", lambda: r)
     monkeypatch.setattr(tom_bot, "get_redis_sync", lambda: r)
+    # Patch the module register_commands closes over so a freshly
+    # registered slash tree (see ``slash_tree``) talks to fakeredis.
+    monkeypatch.setattr("core.redis_client.get_redis_sync", lambda: r)
     return r
+
+
+@pytest.fixture
+def slash_tree(fake_redis):
+    """Fresh Bot + register_commands whose closures use ``fake_redis``.
+
+    Do not reuse ``tom_bot.bot``: it was registered at import time against
+    the real ``get_redis_sync``.
+    """
+    import discord
+    from discord.ext import commands as dcommands
+
+    from agents.tombombadil.commands import register_commands
+
+    bot = dcommands.Bot(command_prefix="!", intents=discord.Intents.none())
+    register_commands(bot)
+    return bot.tree
 
 
 @pytest.fixture

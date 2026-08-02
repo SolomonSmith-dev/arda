@@ -14,7 +14,8 @@ The Tom Bombadil bot ships in production with [70 passing integration tests](../
 - **High:** 0 open (D2 draft binding — fixed)
 - **Medium open:** 2 (D4 Galadriel down, D5 Milvus down — operator)
 - **Medium fixed:** D3 Letterboxd themes, D7 stranger onboarding
-- **Low:** 6 (D1 viewer-prefix decay, D6 /setpref, D8 LLM retry, D9 /unrate, D10 admin slashes, I1 test duplication)
+- **Low open:** 1 (D1 viewer-prefix decay)
+- **Low fixed:** D6 /setpref, D8 LLM retry, D9 /unrate, D10 admin slashes, I1 test duplication
 
 ## Issue index
 
@@ -25,23 +26,24 @@ The Tom Bombadil bot ships in production with [70 passing integration tests](../
 | D3 | Letterboxd-imported films missing themes, breaking /recommend ranking | ~~Medium~~ **Fixed** | Section 4.2.2, 4.2.4 | [#20](https://github.com/SolomonSmith-dev/arda/issues/20) |
 | D4 | Galadriel cron container not running in production, blocking scheduled jobs | Medium | Section 4.2.5, 4.3.1, 4.3.2 | [#21](https://github.com/SolomonSmith-dev/arda/issues/21) |
 | D5 | Milvus standalone not running, Finrod falls back to volatile InMemoryStore | Medium | Section 4.4.1 | [#22](https://github.com/SolomonSmith-dev/arda/issues/22) |
-| D6 | No /setpref slash command for explicit user preference control | Low | Section 4.4.2 | [#23](https://github.com/SolomonSmith-dev/arda/issues/23) |
+| D6 | No /setpref slash command for explicit user preference control | ~~Low~~ **Fixed** | Section 4.4.2 | [#23](https://github.com/SolomonSmith-dev/arda/issues/23) |
 | D7 | Stranger first-contact reply is generic, missing spec onboarding paragraph | ~~Medium~~ **Fixed** | Section 5.1 | [#24](https://github.com/SolomonSmith-dev/arda/issues/24) |
-| D8 | No LLM retry/backoff -- transient Groq errors surface directly to users | Low | Section 5.3 | [#25](https://github.com/SolomonSmith-dev/arda/issues/25) |
-| D9 | No self-service note deletion (/unrate) for individual film corrections | Low | Section 5.4 | [#26](https://github.com/SolomonSmith-dev/arda/issues/26) |
-| D10 | Admin operations have no slash commands, require direct redis-cli access | Low | Section 5.5 | [#27](https://github.com/SolomonSmith-dev/arda/issues/27) |
-| I1 | tests/integration/test_tom_slash.py duplicates unit-test coverage | Low | N/A (test quality) | [#28](https://github.com/SolomonSmith-dev/arda/issues/28) |
+| D8 | No LLM retry/backoff -- transient Groq errors surface directly to users | ~~Low~~ **Fixed** | Section 5.3 | [#25](https://github.com/SolomonSmith-dev/arda/issues/25) |
+| D9 | No self-service note deletion (/unrate) for individual film corrections | ~~Low~~ **Fixed** | Section 5.4 | [#26](https://github.com/SolomonSmith-dev/arda/issues/26) |
+| D10 | Admin operations have no slash commands, require direct redis-cli access | ~~Low~~ **Fixed** | Section 5.5 | [#27](https://github.com/SolomonSmith-dev/arda/issues/27) |
+| I1 | tests/integration/test_tom_slash.py duplicates unit-test coverage | ~~Low~~ **Fixed** | N/A (test quality) | [#28](https://github.com/SolomonSmith-dev/arda/issues/28) |
 
 The body of each issue contains the current behavior, desired behavior, fix sketch, and acceptance criteria. They are all tagged `tom-bombadil` + `audit-delta` + `severity-*` for filtering.
 
 ## Recommended fix order
 
 1. ~~**D2** (High)~~ — fixed: `requester_discord_id` stamped at push; `asyncio.gather` test covers crossed FIFO pops.
-2. **D4 + D5** (operator) -- bring up Galadriel + Milvus containers; activates inert PR 4 / PR 5 work.
+2. **D4 + D5** (operator) -- bring up Galadriel + Milvus containers; activates inert PR 4 / PR 5 work. See `docs/cutover.md` and `docs/tombombadil-memory.md`.
 3. ~~**D7** (Medium)~~ — fixed: templated stranger onboarding; xfail removed.
 4. ~~**D3** (Medium)~~ — fixed: Letterboxd theme enrichment + derived `preferred_themes`.
-5. **I1** (Low) -- wire `FakeInteraction` through the slash tests; reclaims ~250 LOC of accidental duplication.
-6. **D1, D6, D8, D9, D10** (Low) -- bundle into a single "Tom Bombadil polish round 2" PR when there's a quiet window.
+5. ~~**I1** (Low)~~ — fixed: `FakeInteraction` drives `register_commands` glue; pure `cmd_*` stays in unit tests.
+6. ~~**D6, D8, D9, D10** (Low)~~ — fixed via Tom polish PR (#46).
+7. **D1** (Low) -- `[viewer]` prefix decay in stored assistant-turn history.
 
 ## What this audit did NOT cover
 
