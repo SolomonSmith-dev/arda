@@ -1,11 +1,11 @@
-"""Live smoke against real Groq + Gemini providers.
+"""Live smoke against a real Anthropic provider.
 
-Skipped unless both API keys are present in the environment AND
-USE_MOCK_LLM is explicitly false. Useful as a one-shot sanity check
-before/after the Mac Mini cutover; not part of the default CI run.
+Skipped unless ``ANTHROPIC_API_KEY`` is present AND ``USE_MOCK_LLM`` is
+explicitly false. Useful as a one-shot sanity check before/after a
+cutover; not part of the default CI run.
 
 Run with:
-    GEMINI_API_KEY=... GROQ_API_KEY=... USE_MOCK_LLM=false \\
+    ANTHROPIC_API_KEY=... USE_MOCK_LLM=false \\
         pytest -m integration tests/test_live_smoke.py -v
 """
 
@@ -21,14 +21,13 @@ pytestmark = pytest.mark.integration
 def _have_real_keys() -> bool:
     return (
         os.getenv("USE_MOCK_LLM", "true").lower() == "false"
-        and bool(os.getenv("GEMINI_API_KEY"))
-        and bool(os.getenv("GROQ_API_KEY"))
+        and bool(os.getenv("ANTHROPIC_API_KEY"))
     )
 
 
-@pytest.mark.skipif(not _have_real_keys(), reason="real GEMINI/GROQ keys not configured")
+@pytest.mark.skipif(not _have_real_keys(), reason="real ANTHROPIC_API_KEY not configured")
 @pytest.mark.asyncio
-async def test_sauron_real_gemini_routes_and_returns():
+async def test_sauron_real_anthropic_routes_and_returns():
     from llama_index.core import MockEmbedding
     from llama_index.core.llms import MockLLM
 
