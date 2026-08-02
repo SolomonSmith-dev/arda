@@ -94,11 +94,27 @@ class FakeReaction:
 
 
 @dataclass
+class FakeFollowup:
+    """Stand-in for ``interaction.followup`` (used by ``/sync`` after defer)."""
+
+    sent: list[tuple[str, bool]] = field(default_factory=list)
+
+    async def send(self, content: str, ephemeral: bool = False):
+        self.sent.append((content, ephemeral))
+
+
+@dataclass
 class FakeResponse:
     sent: list[tuple[str, bool]] = field(default_factory=list)
+    deferred: bool = False
+    deferred_ephemeral: bool = False
 
     async def send_message(self, content: str, ephemeral: bool = False):
         self.sent.append((content, ephemeral))
+
+    async def defer(self, *, ephemeral: bool = False, thinking: bool = False):
+        self.deferred = True
+        self.deferred_ephemeral = ephemeral
 
 
 @dataclass
@@ -107,3 +123,4 @@ class FakeInteraction:
     channel_id: int
     channel: FakeChannel
     response: FakeResponse = field(default_factory=FakeResponse)
+    followup: FakeFollowup = field(default_factory=FakeFollowup)

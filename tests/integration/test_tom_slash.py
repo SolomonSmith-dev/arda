@@ -1,284 +1,201 @@
-"""Spec 4.2: Tom Bombadil slash command flows."""
+"""Spec 4.2: Tom Bombadil slash command *glue* (register_commands path).
+
+Pure ``cmd_*`` behaviour lives in ``tests/tombombadil/test_commands.py``
+and ``tests/tombombadil/test_club.py``. This module drives the
+discord.py app-command callbacks registered by ``register_commands``
+through ``FakeInteraction``, asserting:
+
+- ephemeral True/False per command family
+- ``tom_slash_commands_total`` metric increments
+- interaction-derived wiring (viewer from FakeUser, channel_id,
+  history_scope_key for /forget)
+"""
 
 from __future__ import annotations
 
 import pytest
 
-from agents.tombombadil import club, memory
-from agents.tombombadil import commands as tom_commands
-from agents.tombombadil.film_knowledge import FilmKnowledge
+from agents.galadriel.store import list_jobs
+from agents.tombombadil import memory, metrics
 from agents.tombombadil.identity import resolve as resolve_viewer
+from tests.integration.conftest import make_interaction
 
 
-def test_rate_saves_for_owner(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.1: /rate by the owner logs a note."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = tom_commands.cmd_rate(fake_redis, viewer, "Inception", 9)
-    assert "OK" in reply and "Inception" in reply
+def _slash_count(name: str) -> float:
+    return metrics.SLASH_COMMANDS.labels(name=name)._value.get()
+
+
+def _callback(tree, name: str):
+    cmd = tree.get_command(name)
+    assert cmd is not None, f"missing slash /{name}"
+    return cmd.callback
+
+
+def _club_callback(tree, name: str):
+    club = tree.get_command("club")
+    assert club is not None, "missing /club group"
+    cmd = club.get_command(name)
+    assert cmd is not None, f"missing slash /club {name}"
+    return cmd.callback
+
+
+def _last_reply(interaction) -> tuple[str, bool]:
+    assert interaction.response.sent, "expected response.send_message"
+    return interaction.response.sent[-1]
+
+
+# ---------------------------------------------------------------------------
+# Public (non-ephemeral) commands
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rate_glue_public_and_metrics(identity_yaml, fake_redis, slash_tree, solomon, guild_channel):
+    """Spec 4.2.1 glue: /rate is public, increments metric, saves note."""
+    ix = make_interaction(solomon, guild_channel)
+    before = _slash_count("rate")
+    await _callback(slash_tree, "rate")(ix, film="Inception", rating=9.0)
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is False
+    assert "OK" in content and "Inception" in content
+    assert _slash_count("rate") == before + 1
     assert fake_redis.sismember("films", "Inception")
     assert fake_redis.sismember("watchers", "Solomon Smith")
 
 
-def test_rate_saves_for_regular(identity_yaml, fake_redis, brian):
-    """Spec 4.2.1: /rate by a regular logs under their canonical name."""
-    viewer = resolve_viewer(str(brian.id), str(brian))
-    reply = tom_commands.cmd_rate(fake_redis, viewer, "Stalker", 8.5)
-    assert "OK" in reply
-    assert fake_redis.sismember("watchers", "Brian")
-
-
-def test_rate_refuses_stranger(identity_yaml, fake_redis, stranger):
-    """Spec 4.2.1: strangers get a configuration message, no save."""
-    viewer = resolve_viewer(str(stranger.id), str(stranger))
-    reply = tom_commands.cmd_rate(fake_redis, viewer, "Inception", 9)
-    assert "canonical name" in reply
-    assert not fake_redis.sismember("films", "Inception")
-
-
-def test_rate_rejects_out_of_range(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.1 / preconditions: rating must be 0-10."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = tom_commands.cmd_rate(fake_redis, viewer, "Inception", 15)
-    assert "between 0 and 10" in reply
-    assert not fake_redis.sismember("films", "Inception")
-
-
-def test_rate_rejects_empty_film(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.1: empty film is refused."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = tom_commands.cmd_rate(fake_redis, viewer, "   ", 9)
-    assert "Film is required" in reply
-
-
-def test_whoami_owner(identity_yaml, solomon):
-    """Spec 4.2.7: /whoami shows tier=solomon for the owner."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = tom_commands.cmd_whoami(viewer)
-    assert "solomon" in reply.lower()
-    assert "yes" in reply.lower()
-
-
-def test_whoami_regular(identity_yaml, brian):
-    """Spec 4.2.7: /whoami shows tier=regular for a club member."""
-    viewer = resolve_viewer(str(brian.id), str(brian))
-    reply = tom_commands.cmd_whoami(viewer)
-    assert "regular" in reply.lower()
-    assert "Brian" in reply
-
-
-def test_whoami_stranger(identity_yaml, stranger):
-    """Spec 4.2.7: strangers see tier=stranger and 'not yet mapped'."""
-    viewer = resolve_viewer(str(stranger.id), str(stranger))
-    reply = tom_commands.cmd_whoami(viewer)
-    assert "stranger" in reply.lower()
-    assert "not yet mapped" in reply.lower()
-
-
-def test_recommend_for_solomon_returns_favorites_fallback(
-    identity_yaml, fake_redis, solomon
+@pytest.mark.asyncio
+async def test_recommend_glue_public_and_metrics(
+    identity_yaml, fake_redis, slash_tree, solomon, guild_channel
 ):
-    """Spec 4.2.2: Solomon has watched the entire seed catalog, so the
-    theme-overlap pick is None; the fallback surfaces favorites instead
-    of returning 'I don't have enough data'."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = tom_commands.cmd_recommend(viewer)
-    assert "don't have enough data" not in reply.lower()
-    # Either the rec format or the favorites fallback header.
-    assert reply.startswith("**For Solomon Smith")
+    """Spec 4.2.2 glue: /recommend is public and increments metric."""
+    ix = make_interaction(solomon, guild_channel)
+    before = _slash_count("recommend")
+    await _callback(slash_tree, "recommend")(ix, for_name=None)
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is False
+    assert content.startswith("**For Solomon Smith")
+    assert _slash_count("recommend") == before + 1
 
 
-def test_recommend_for_known_other_returns_string(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.2: /recommend for_name:<known> succeeds (rec or fallback)."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = tom_commands.cmd_recommend(viewer, for_name="Brian")
-    assert reply and "I don't know" not in reply
+@pytest.mark.asyncio
+async def test_club_stats_glue_public_and_metrics(identity_yaml, fake_redis, slash_tree, solomon, guild_channel):
+    """Spec 4.2.3 glue: /club stats is public and increments metric."""
+    ix = make_interaction(solomon, guild_channel)
+    before = _slash_count("club_stats")
+    await _club_callback(slash_tree, "stats")(ix)
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is False
+    assert "Top-rated" in content
+    assert _slash_count("club_stats") == before + 1
 
 
-def test_recommend_for_unknown_admits_ignorance(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.2 / V5: unknown name returns a refusal, not a hallucinated rec."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = tom_commands.cmd_recommend(viewer, for_name="NobodyAtAll")
-    assert "don't know" in reply.lower()
-
-
-def test_recommend_for_stranger_self_explains(identity_yaml, fake_redis, stranger):
-    """Spec 4.2.2: a stranger asking /recommend with no for_name gets
-    a helpful note about identity mapping."""
-    viewer = resolve_viewer(str(stranger.id), str(stranger))
-    reply = tom_commands.cmd_recommend(viewer)
-    assert "name" in reply.lower()
-
-
-def test_club_stats_includes_seed_films():
-    """Spec 4.2.3: /club stats returns aggregate with Ran/La Haine/Ghost Dog."""
-    reply = tom_commands.cmd_club_stats()
-    assert "Top-rated" in reply
-    assert "Ran" in reply or "La Haine" in reply
-
-
-# ---------------------------------------------------------------------------
-# Shared fixture
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def knowledge():
-    """FilmKnowledge is treated read-only by all callers in this file.
-    Module-scoping avoids reparsing FILM_DATABASE for every test."""
-    return FilmKnowledge()
-
-
-# ---------------------------------------------------------------------------
-# Spec 4.2.4: /club recommend
-# ---------------------------------------------------------------------------
-
-
-def test_club_recommend_empty_names(knowledge):
-    """Spec 4.2.4: empty list returns a 'pass one or more' message."""
-    reply = club.cmd_club_recommend(knowledge, "")
-    assert "one or more" in reply.lower()
-
-
-def test_club_recommend_all_unknown(knowledge):
-    """Spec 4.2.4: all-unknown names returns 'I don't know any of...'."""
-    reply = club.cmd_club_recommend(knowledge, "NobodyA, NobodyB")
-    assert "don't know any" in reply.lower()
-
-
-def test_club_recommend_mixed_known_and_unknown(knowledge):
-    """Spec 4.2.4: at least one known name produces a recommendation
-    string (or the 'everyone's watched' fallback). Never crashes."""
-    reply = club.cmd_club_recommend(knowledge, "Brian, NobodyA")
-    assert isinstance(reply, str) and reply
-    assert "don't know any" not in reply.lower()
-
-
-# ---------------------------------------------------------------------------
-# Spec 4.2.5: /club schedule
-# ---------------------------------------------------------------------------
-
-
-def test_club_schedule_saves_galadriel_job(
-    identity_yaml, fake_redis, knowledge
+@pytest.mark.asyncio
+async def test_club_recommend_glue_public_and_metrics(
+    identity_yaml, fake_redis, slash_tree, solomon, guild_channel
 ):
-    """Spec 4.2.5: /club schedule registers a Galadriel job in Redis."""
-    reply = club.cmd_club_schedule(
-        fake_redis, knowledge,
-        film="Inception",
-        when_iso="2099-01-01T19:00:00",
-        channel_id="42",
-        organizer="Solomon Smith",
+    """Spec 4.2.4 glue: /club recommend is public and increments metric."""
+    ix = make_interaction(solomon, guild_channel)
+    before = _slash_count("club_recommend")
+    await _club_callback(slash_tree, "recommend")(ix, names="Brian")
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is False
+    assert isinstance(content, str) and content
+    assert _slash_count("club_recommend") == before + 1
+
+
+@pytest.mark.asyncio
+async def test_club_schedule_uses_interaction_channel_id(
+    identity_yaml, fake_redis, slash_tree, solomon, guild_channel
+):
+    """Spec 4.2.5 glue: channel_id comes from the interaction, not a hardcoded arg."""
+    ix = make_interaction(solomon, guild_channel)
+    before = _slash_count("club_schedule")
+    await _club_callback(slash_tree, "schedule")(
+        ix, film="Inception", when="2099-01-01T19:00:00"
     )
-    assert reply.startswith("Scheduled watch party")
-    # The Galadriel store writes cron:job:<id> keys.
-    keys = [k for k in fake_redis.keys("cron:job:*")]
-    assert any("watch_party_" in k for k in keys)
-
-
-def test_club_schedule_rejects_bad_iso(identity_yaml, fake_redis, knowledge):
-    """Spec 4.2.5: malformed ISO returns a typed error."""
-    reply = club.cmd_club_schedule(
-        fake_redis, knowledge,
-        film="Inception", when_iso="next thursday",
-        channel_id="42", organizer="Solomon Smith",
-    )
-    assert "ISO 8601" in reply
-
-
-def test_club_schedule_rejects_empty_film(identity_yaml, fake_redis, knowledge):
-    """Spec 4.2.5: empty film is refused before saving the job."""
-    reply = club.cmd_club_schedule(
-        fake_redis, knowledge,
-        film="   ", when_iso="2099-01-01T19:00:00",
-        channel_id="42", organizer="Solomon Smith",
-    )
-    assert "Film is required" in reply
-
-
-def test_club_schedule_warns_for_uncatalogued_film(
-    identity_yaml, fake_redis, knowledge
-):
-    """Spec 4.2.5: scheduling a film not in FILM_DATABASE adds a heads-up."""
-    reply = club.cmd_club_schedule(
-        fake_redis, knowledge,
-        film="The Holy Mountain",
-        when_iso="2099-01-01T19:00:00",
-        channel_id="42", organizer="Solomon Smith",
-    )
-    assert "Scheduled" in reply
-    assert "isn't in the catalog" in reply
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is False
+    assert content.startswith("Scheduled watch party")
+    assert _slash_count("club_schedule") == before + 1
+    jobs = [j for j in list_jobs(fake_redis) if j.id.startswith("watch_party_")]
+    assert jobs, "expected a watch_party cron job"
+    # Delivery target must be the FakeInteraction channel id.
+    assert jobs[0].delivery.to == str(guild_channel.id)
 
 
 # ---------------------------------------------------------------------------
-# Spec 4.2.6: /forget across all scopes
+# Ephemeral (private) commands
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_forget_short_clears_channel_history(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.6 short: clears current channel's history list."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    memory.append_turn(fake_redis, "tom:hist:ch:42", viewer, "user", "hi")
-    reply = await tom_commands.cmd_forget(fake_redis, viewer, "tom:hist:ch:42", "short")
-    assert "conversation history" in reply.lower()
-    assert memory.recent_turns(fake_redis, "tom:hist:ch:42") == []
-
-
-@pytest.mark.asyncio
-async def test_forget_prefs_clears_pref_hash(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.6 prefs: deletes tom:pref:<id> HASH."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    memory.set_pref(fake_redis, viewer.discord_id, "suppress_films", "1")
-    reply = await tom_commands.cmd_forget(fake_redis, viewer, None, "prefs")
-    assert "preferences" in reply.lower()
-    assert memory.get_prefs(fake_redis, viewer.discord_id) == {}
-
-
-@pytest.mark.asyncio
-async def test_forget_long_clears_viewer_finrod_facts(
-    identity_yaml, fake_redis, finrod_in_memory, solomon
+async def test_whoami_glue_ephemeral_resolves_regular(
+    identity_yaml, fake_redis, slash_tree, brian, guild_channel
 ):
-    """Spec 4.2.6 long: drops viewer's tom_fact rows from Finrod's store."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    await memory.remember_fact(viewer, "user loves Tarkovsky", source_channel="x")
-    assert finrod_in_memory.node_count() > 0
-    reply = await tom_commands.cmd_forget(fake_redis, viewer, None, "long")
-    assert "fact" in reply.lower()
-    assert finrod_in_memory.node_count() == 0
+    """Spec 4.2.7 glue: /whoami is ephemeral; viewer comes from FakeUser + YAML."""
+    ix = make_interaction(brian, guild_channel)
+    before = _slash_count("whoami")
+    await _callback(slash_tree, "whoami")(ix)
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is True
+    assert "regular" in content.lower()
+    assert "Brian" in content
+    assert _slash_count("whoami") == before + 1
 
 
 @pytest.mark.asyncio
-async def test_forget_all_clears_everything(
-    identity_yaml, fake_redis, finrod_in_memory, solomon
+async def test_forget_glue_ephemeral_uses_history_scope_key(
+    identity_yaml, fake_redis, slash_tree, solomon, guild_channel
 ):
-    """Spec 4.2.6 all: short + prefs + long together."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    memory.append_turn(fake_redis, "tom:hist:ch:42", viewer, "user", "hi")
-    memory.set_pref(fake_redis, viewer.discord_id, "suppress_films", "1")
-    await memory.remember_fact(viewer, "fact", source_channel="x")
-    reply = await tom_commands.cmd_forget(fake_redis, viewer, "tom:hist:ch:42", "all")
-    assert "Cleared" in reply
-    assert memory.recent_turns(fake_redis, "tom:hist:ch:42") == []
-    assert memory.get_prefs(fake_redis, viewer.discord_id) == {}
-    assert finrod_in_memory.node_count() == 0
+    """Spec 4.2.6 glue: /forget is ephemeral and scopes via history_scope_key."""
+    ix = make_interaction(solomon, guild_channel)
+    scope_key = memory.history_scope_key(ix)
+    assert scope_key == f"tom:hist:ch:{guild_channel.id}"
+    # Seed a turn under the interaction-derived key (not a hand-built string).
+    viewer = resolve_viewer(str(solomon.id), str(solomon), redis=fake_redis)
+    memory.append_turn(fake_redis, scope_key, viewer, "user", "hi")
+
+    before = _slash_count("forget")
+    await _callback(slash_tree, "forget")(ix, scope="short")
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is True
+    assert "conversation history" in content.lower()
+    assert memory.recent_turns(fake_redis, scope_key) == []
+    assert _slash_count("forget") == before + 1
 
 
 @pytest.mark.asyncio
-async def test_forget_rejects_unknown_scope(identity_yaml, fake_redis, solomon):
-    """Spec 4.2.6: unknown scope returns a typed error."""
-    viewer = resolve_viewer(str(solomon.id), str(solomon))
-    reply = await tom_commands.cmd_forget(fake_redis, viewer, "tom:hist:ch:42", "everything")
-    assert "Scope must be" in reply
-
-
-@pytest.mark.asyncio
-async def test_forget_long_does_not_touch_other_viewer(
-    identity_yaml, fake_redis, finrod_in_memory, solomon, brian
+async def test_setpref_glue_ephemeral_and_metrics(
+    identity_yaml, fake_redis, slash_tree, solomon, guild_channel
 ):
-    """Spec 4.2.6 long / 5.4 privacy: Solomon's /forget never wipes Brian's facts."""
-    solomon_v = resolve_viewer(str(solomon.id), str(solomon))
-    brian_v = resolve_viewer(str(brian.id), str(brian))
-    await memory.remember_fact(solomon_v, "solomon fact", source_channel="x")
-    await memory.remember_fact(brian_v, "brian fact", source_channel="x")
-    await tom_commands.cmd_forget(fake_redis, solomon_v, None, "long")
-    assert finrod_in_memory.node_count() == 1  # Brian's fact survives
+    """D6 glue: /setpref is ephemeral and increments metric."""
+    ix = make_interaction(solomon, guild_channel)
+    before = _slash_count("setpref")
+    await _callback(slash_tree, "setpref")(ix, key="suppress_films", value="1")
+    content, ephemeral = _last_reply(ix)
+    assert ephemeral is True
+    assert "suppress_films" in content
+    assert _slash_count("setpref") == before + 1
+    assert memory.get_prefs(fake_redis, str(solomon.id)).get("suppress_films") == "1"
+
+
+@pytest.mark.asyncio
+async def test_sync_glue_defers_then_followup(
+    identity_yaml, fake_redis, slash_tree, solomon, guild_channel, monkeypatch
+):
+    """D10 glue: /sync defers (ephemeral) then replies via followup."""
+    monkeypatch.setattr(
+        "agents.tombombadil.commands.cmd_sync",
+        lambda *_a, **_k: "Synced 0 films.",
+    )
+    ix = make_interaction(solomon, guild_channel)
+    before = _slash_count("sync")
+    await _callback(slash_tree, "sync")(ix)
+    assert ix.response.deferred is True
+    assert ix.response.deferred_ephemeral is True
+    assert not ix.response.sent
+    assert ix.followup.sent
+    content, ephemeral = ix.followup.sent[-1]
+    assert ephemeral is True
+    assert "Synced" in content
+    assert _slash_count("sync") == before + 1
