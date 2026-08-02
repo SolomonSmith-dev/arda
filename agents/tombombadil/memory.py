@@ -141,6 +141,13 @@ def set_pref(redis, discord_id: str, key: str, value: str) -> None:
     redis.hset(_pref_key(discord_id), key, value)
 
 
+def clear_pref(redis, discord_id: str, key: str) -> None:
+    """Remove a single pref field. No-op if the key is absent."""
+    if key not in PREF_KEYS:
+        raise ValueError(f"unknown pref {key!r}; allowed: {sorted(PREF_KEYS)}")
+    redis.hdel(_pref_key(discord_id), key)
+
+
 def clear_prefs(redis, discord_id: str) -> None:
     redis.delete(_pref_key(discord_id))
 

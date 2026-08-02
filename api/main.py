@@ -82,6 +82,15 @@ async def lifespan(app: FastAPI):
             checkpointer=type(checkpointer).__name__,
         )
 
+        # D4: seed the Letterboxd daily sync job so bringing Galadriel up
+        # is enough — the job exists even before an operator runs /sync.
+        try:
+            from agents.tombombadil.sync_job import ensure_letterboxd_sync_cron
+
+            ensure_letterboxd_sync_cron(get_redis_sync())
+        except Exception as e:
+            log.warning("letterboxd_sync_cron_ensure_failed", exception=str(e))
+
         yield
 
     with contextlib.suppress(Exception):

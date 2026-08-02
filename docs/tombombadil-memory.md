@@ -14,6 +14,7 @@ gitignored — only the example ships.
 
 Resolution order:
 
+0. Redis `/setrole` override at `tom:identity:{discord_id}` (if present).
 1. YAML owner entry by `discord_id` → `Tier.SOLOMON`.
 2. YAML regulars entry by `discord_id` → `Tier.REGULAR`.
 3. Case-insensitive name match against `FILM_DATABASE['people']` →
@@ -22,7 +23,8 @@ Resolution order:
 
 To enable identity-aware behavior in production, populate
 `data/tombombadil/identity.yaml` with real Discord snowflake IDs
-(Developer Mode → right-click user → "Copy User ID").
+(Developer Mode → right-click user → "Copy User ID"). Owner can also
+apply temporary overrides via `/setrole` without editing YAML.
 
 ## Short-term: conversation history
 
@@ -146,3 +148,24 @@ docker compose exec redis redis-cli HGETALL "tom:pref:{discord_id}"
 Long-term facts have no manual wipe path yet. Restart the
 `tombombadil` container to clear them; per-fact `/forget` lands in
 PR 3.
+
+## Production profiles (D4 / D5)
+
+Default `docker compose up -d` runs Redis + API + Earendil worker only.
+Scheduled jobs and durable long-term memory need extra profiles:
+
+```bash
+# Galadriel cron (Letterboxd sync + watch-party reminders)
+docker compose --profile cron up -d
+# API lifespan seeds tom_letterboxd_sync into Redis; Galadriel drains it.
+
+# Discord bot
+docker compose --profile discord up -d   # needs DISCORD_TOKEN
+
+# Durable Finrod memory (Milvus) — also needs [full] install + USE_MOCK_EMBEDDER=false
+docker compose --profile milvus up -d
+```
+
+Verify: `docker compose ps galadriel` / `docker compose ps milvus`.
+Owner can force a Letterboxd sync from Discord with `/sync`.
+

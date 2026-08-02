@@ -81,11 +81,17 @@ The ``legacy_api/earendil_api.py`` rollback artifact has been removed; ``api/mai
 
 ## Notes
 
-- **Tom Bombadil bot** is not started in-process. Uncomment the
-  `tombombadil` service in `docker-compose.yml` and provide a
-  `DISCORD_TOKEN` to bring the bot up alongside the API.
-- **Milvus** is deferred to v0.4. Finrod automatically falls back to
-  the in-memory store when `MILVUS_HOST` is unreachable. Document
-  ingest persists for the lifetime of the API container.
+- **Tom Bombadil bot** is gated behind the `discord` profile. Bring it up
+  with `docker compose --profile discord up -d` after setting
+  `DISCORD_TOKEN` in `.env`.
+- **Galadriel cron (D4):** enable with `docker compose --profile cron up -d`.
+  The API lifespan seeds `tom_letterboxd_sync` into Redis automatically;
+  Galadriel must be running for the job to fire. Owner can also run
+  `/sync` in Discord.
+- **Milvus (D5):** enable with `docker compose --profile milvus up -d` and
+  install the `[full]` extra (`uv sync --extra dev --extra full`) with
+  `USE_MOCK_EMBEDDER=false` + `MILVUS_HOST=milvus`. Finrod falls back to
+  the in-memory store when Milvus is unreachable (facts evaporate on
+  container recreate).
 - **Image size** can be trimmed later by switching to a CPU-only
   torch wheel and dropping CUDA deps from the install set.

@@ -108,7 +108,13 @@ async def test_llm_timeout_returns_canned_no_history(
     async def raise_timeout(*_a, **_k):
         raise TimeoutError("simulated")
 
-    with patch.object(tom_agent._llm.messages, "create", side_effect=raise_timeout):
+    async def _no_sleep(_):
+        return None
+
+    with (
+        patch.object(tom_agent._llm.messages, "create", side_effect=raise_timeout),
+        patch("asyncio.sleep", side_effect=_no_sleep),
+    ):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
     assert "LLM timeout" in msg.reply_log[0]
     assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
@@ -136,10 +142,42 @@ async def test_llm_arbitrary_exception_returns_canned(
     async def raise_boom(*_a, **_k):
         raise RuntimeError("boom")
 
-    with patch.object(tom_agent._llm.messages, "create", side_effect=raise_boom):
+    async def _no_sleep(_):
+        return None
+
+    with (
+        patch.object(tom_agent._llm.messages, "create", side_effect=raise_boom),
+        patch("asyncio.sleep", side_effect=_no_sleep),
+    ):
         msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
-    assert "Error processing" in msg.reply_log[-1]
+    assert "Error processing" in msg.reply_log[0]
     assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}") == []
+
+
+@pytest.mark.asyncio
+async def test_llm_retries_transient_failure_then_succeeds(
+    identity_yaml, fake_redis, fake_bot_user, solomon, guild_channel
+):
+    """D8: one transient failure then success → user sees the success reply."""
+    calls = {"n": 0}
+
+    async def fail_once(*_a, **_k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TimeoutError("blip")
+        return MockMessage(content=[TextBlock(text="recovered")], stop_reason="end_turn")
+
+    async def _no_sleep(_):
+        return None
+
+    with (
+        patch.object(tom_agent._llm.messages, "create", side_effect=fail_once),
+        patch("asyncio.sleep", side_effect=_no_sleep),
+    ):
+        msg = await _send_mention(guild_channel, solomon, "hi", bot_user=fake_bot_user)
+    assert msg.reply_log[0] == "recovered"
+    assert calls["n"] == 2
+    assert memory.recent_turns(fake_redis, f"tom:hist:ch:{guild_channel.id}")
 
 
 @pytest.mark.asyncio

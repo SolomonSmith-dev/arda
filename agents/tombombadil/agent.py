@@ -278,34 +278,62 @@ async def get_response(
         {"role": "user", "content": text},
     ]
 
-    try:
-        import asyncio
+    import asyncio
+    import random
 
-        response = await asyncio.wait_for(
-            _llm.messages.create(
-                model=settings.specialist_model,
-                system=system_prompt,
-                messages=messages,
-                max_tokens=MAX_REPLY_TOKENS,
-            ),
-            timeout=LLM_TIMEOUT_SECONDS,
-        )
-        reply = _extract_text(response) or "No response generated"
+    # D8: up to 2 retries with jitter before surfacing the canned error.
+    max_attempts = 3
+    reply: str | None = None
+    last_timeout = False
+    last_exc: Exception | None = None
+    for attempt in range(max_attempts):
+        try:
+            response = await asyncio.wait_for(
+                _llm.messages.create(
+                    model=settings.specialist_model,
+                    system=system_prompt,
+                    messages=messages,
+                    max_tokens=MAX_REPLY_TOKENS,
+                ),
+                timeout=LLM_TIMEOUT_SECONDS,
+            )
+            reply = _extract_text(response) or "No response generated"
+            if reply == "No response generated":
+                log.warning("llm_empty_response", scope=scope_key)
+                return reply
+            log.info(
+                "llm_response_success",
+                scope=scope_key,
+                response_length=len(reply),
+                attempt=attempt + 1,
+            )
+            break
+        except TimeoutError as e:
+            last_timeout = True
+            last_exc = e
+            log.warning("llm_timeout_retry", scope=scope_key, attempt=attempt + 1)
+        except Exception as e:
+            last_timeout = False
+            last_exc = e
+            log.warning(
+                "llm_request_retry",
+                scope=scope_key,
+                attempt=attempt + 1,
+                exception=str(e),
+                exception_type=type(e).__name__,
+            )
+        if attempt < max_attempts - 1:
+            await asyncio.sleep(0.25 + random.random() * 0.75)
 
-        if reply == "No response generated":
-            log.warning("llm_empty_response", scope=scope_key)
-            return reply
-
-        log.info("llm_response_success", scope=scope_key, response_length=len(reply))
-    except TimeoutError:
-        log.error("llm_timeout", scope=scope_key)
-        return "LLM timeout, try again"
-    except Exception as e:
+    if reply is None:
+        if last_timeout:
+            log.error("llm_timeout", scope=scope_key)
+            return "LLM timeout, try again"
         log.error(
             "llm_request_failed",
             scope=scope_key,
-            exception=str(e),
-            exception_type=type(e).__name__,
+            exception=str(last_exc),
+            exception_type=type(last_exc).__name__ if last_exc else None,
         )
         return "Error processing your request"
 

@@ -45,7 +45,8 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    viewer = resolve_viewer(str(message.author.id), str(message.author))
+    redis_client = get_redis_sync()
+    viewer = resolve_viewer(str(message.author.id), str(message.author), redis=redis_client)
     log.info(
         "message_received",
         author=str(message.author),
@@ -58,7 +59,6 @@ async def on_message(message):
     if bot.user.mentioned_in(message):
         content = _resolve_mentions(message)
         scope_key = memory.history_scope_key(message)
-        redis_client = get_redis_sync()
 
         refusal = _guard_check(redis_client, viewer, content)
         if refusal is not None:
