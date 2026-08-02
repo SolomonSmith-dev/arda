@@ -202,11 +202,30 @@ def _extract_text(response: Any) -> str:
     return "".join(pieces).strip()
 
 
+def _stranger_onboarding_reply(viewer: Viewer) -> str:
+    """Spec 5.1 first-contact template for ``Tier.STRANGER``.
+
+    Templated (not LLM) so MockLLM cannot break the contract and so
+    every first-time stranger gets a deterministic greeting + next
+    action (D7).
+    """
+    name = viewer.discord_name or "there"
+    return (
+        f"Hey {name} — haven't seen you here before. "
+        "I run the film club's notes here: ratings, recommendations, "
+        "and club chatter. "
+        "Try /whoami to see how I see you, or just tell me what you've "
+        "been watching."
+    )
+
+
 async def get_response(
     scope_key: str,
     text: str,
     viewer: Viewer,
     redis_client=None,
+    *,
+    offer_stranger_onboarding: bool = False,
 ) -> str:
     """Generate a reply for ``viewer``'s message.
 
@@ -215,6 +234,10 @@ async def get_response(
     - Runs the rule-based fact extractor and persists prefs / notes /
       free-facts. The fact extractor runs *after* the reply is sent so
       response latency is unchanged.
+
+    ``offer_stranger_onboarding`` is True only for the Discord bot path
+    (spec 5.1 / D7). Sauron/API dispatches synthesise a stranger viewer
+    and must keep the normal LLM path.
     """
     if not text or not text.strip():
         return "Please provide a message"
@@ -231,6 +254,23 @@ async def get_response(
     prefs = memory.get_prefs(redis_client, viewer.discord_id)
     recalled = await memory.recall_facts(viewer, text)
     history = memory.recent_turns(redis_client, scope_key)
+
+    # Spec 5.1 / D7: first-contact Discord strangers get a templated
+    # onboarding paragraph. Subsequent turns (and all Sauron/API calls)
+    # fall through to the normal LLM path.
+    if (
+        offer_stranger_onboarding
+        and viewer.tier is Tier.STRANGER
+        and not history
+    ):
+        reply = _stranger_onboarding_reply(viewer)
+        log.info("stranger_onboarding_reply", scope=scope_key, viewer=viewer.discord_name)
+        try:
+            memory.append_turn(redis_client, scope_key, viewer, "user", text)
+            memory.append_turn(redis_client, scope_key, viewer, "assistant", reply)
+        except Exception as e:
+            log.warning("memory_append_failed", scope=scope_key, exc=str(e))
+        return reply
 
     system_prompt = _build_system_prompt(viewer, prefs, recalled)
     messages: list[dict[str, Any]] = [

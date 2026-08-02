@@ -65,7 +65,9 @@ async def on_message(message):
             await message.reply(refusal)
             return
 
-        reply = await get_response(scope_key, content, viewer, redis_client)
+        reply = await get_response(
+            scope_key, content, viewer, redis_client, offer_stranger_onboarding=True
+        )
         sent = await message.reply(reply)
         metrics.REPLIES.labels(tier=viewer.tier.value).inc()
         log.info("mention_response_sent", response_preview=reply[:100])

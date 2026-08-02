@@ -164,7 +164,10 @@ The 14 user-visible flows. Each follows the same template (trigger / tier / inpu
 - **Examples:**
   - `/recommend` (as Solomon) → favorites-list fallback (seed catalog exhausted for Solomon).
   - `/recommend for_name:Brian` → theme-matched suggestion or fallback paragraph.
-- **Known delta:** Letterboxd-imported films don't carry `themes` after merge, so `suggest_for_person` only ever picks from the 3 seed films. For any viewer with full Letterboxd history, the recommender lands on the favorites fallback. Fix: tag Letterboxd films during merge.
+- **Known delta:** None for theme enrichment — Letterboxd merge stamps
+  themes via tags + keyword inference and derives `preferred_themes`
+  (D3). `/recommend` can rank against imported history, not just the
+  three seed films.
 
 #### 4.2.3 `/club stats`
 
@@ -342,7 +345,10 @@ When a stranger (no YAML entry, no `FILM_DATABASE` name match) `@`s Tom for the 
 3. Does NOT invent a film history or pretend to know them.
 4. The first turn is added to history like any other; subsequent strangers' messages get normal replies (no infinite onboarding).
 
-**Known delta:** Currently strangers get the generic film-history-aware reply, just with the "ask, don't fabricate" system block. The onboarding paragraph above isn't a special case in code — would need a first-turn detector keyed on empty history.
+**Known delta:** None — first-contact strangers get a templated
+onboarding reply (greeting + role + `/whoami` / "tell me what you've
+been watching") when history is empty (D7). Subsequent turns use the
+normal LLM path.
 
 ### 5.2 Multi-user collisions
 
@@ -470,11 +476,11 @@ Pulled together for the usability audit (sub-project C). Each entry references t
 |---|-------|---------|----------|
 | D1 | Old `[viewer]` prefix may still appear from pre-fix history entries | 4.1.1 | Low (decays in 7 days) |
 | D2 | ~~Draft `requester_discord_id` is bound at pop time~~ **Fixed** — stamped on `NoteDraft` at push; concurrent `asyncio.gather` test covers crossed FIFO pops | 4.1.2, 5.2 | ~~High~~ Done |
-| D3 | Letterboxd-imported films have no `themes`, so `suggest_for_person` only ever ranks against 3 seeded films | 4.2.2, 4.2.4 | Med |
+| D3 | ~~Letterboxd-imported films have no `themes`~~ **Fixed** — tags + keyword inference + derived `preferred_themes` | 4.2.2, 4.2.4 | ~~Med~~ Done |
 | D4 | Galadriel container off → watch-party + daily sync inert | 4.2.5, 4.3.1, 4.3.2 | Med (operator action) |
 | D5 | Milvus standalone profile not running → long-term facts evaporate on container recreate | 4.4.1 | Med (operator action) |
 | D6 | No `/setpref` for explicit pref control | 4.4.2 | ~~Low~~ Done |
-| D7 | Stranger onboarding paragraph not specialised — strangers get generic film-aware reply | 5.1 | Med |
+| D7 | ~~Stranger onboarding paragraph not specialised~~ **Fixed** — templated first-contact reply | 5.1 | ~~Med~~ Done |
 | D8 | LLM has no retry-with-backoff; transient Groq blips surface as user-visible failures | 5.3 | ~~Low~~ Done |
 | D9 | No self-service note deletion (no `/unrate`) | 5.4 | ~~Low~~ Done |
 | D10 | No admin slash commands (`/ban`, `/sync`) gated to owner tier | 5.5 | ~~Low~~ Done |

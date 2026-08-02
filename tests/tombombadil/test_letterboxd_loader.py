@@ -103,6 +103,75 @@ def test_merge_updates_people_avg_rating(export_dir):
     assert "Inception" in profile["films_watched"]
 
 
+def test_merge_enriches_themes_and_preferred_themes(export_dir):
+    """D3: imported films carry themes; preferred_themes is derived so
+    suggest_for_person can rank against Letterboxd history."""
+    from agents.tombombadil.letterboxd_loader import infer_themes
+
+    export = load_letterboxd_export(export_dir)
+    merged = merge_into_film_database(FILM_DATABASE, export)
+
+    inception = next(f for f in merged["films"] if f["title"] == "Inception")
+    assert "sci-fi" in inception["themes"]
+    assert "heist" in inception["themes"]
+
+    # Tag-less Stalker still gets at least one inferred/fallback theme.
+    stalker = next(f for f in merged["films"] if f["title"] == "Stalker")
+    assert stalker["themes"]
+
+    profile = merged["people"]["Solomon Smith"]
+    assert profile["preferred_themes"], "preferred_themes must not stay empty after import"
+    assert "sci-fi" in profile["preferred_themes"] or "heist" in profile["preferred_themes"]
+
+    # Keyword inference from review text alone.
+    assert "identity" in infer_themes("Unknown Film", "a dream about memory and identity")
+
+
+def test_recommend_uses_letterboxd_themes_not_just_seeds(export_dir):
+    """D3 acceptance: after a Letterboxd merge, /recommend can surface a
+    non-seed film via theme overlap (not the favorites-list fallback)."""
+    from agents.tombombadil.film_knowledge import FilmKnowledge
+
+    # Catalog includes an unwatched sci-fi film Solomon never logged.
+    base = {
+        "films": list(FILM_DATABASE["films"])
+        + [
+            {
+                "title": "Blade Runner",
+                "directors": "Ridley Scott",
+                "year": 1982,
+                "watchers": [
+                    {
+                        "name": "Anthony Taylor",
+                        "rating": 9,
+                        "themes": ["sci-fi", "identity"],
+                        "take": "what is human",
+                    }
+                ],
+                "group_consensus": "",
+                "themes": ["sci-fi", "identity", "noir"],
+            }
+        ],
+        "people": dict(FILM_DATABASE["people"]),
+    }
+    export = load_letterboxd_export(export_dir)
+    merged = merge_into_film_database(base, export)
+
+    fk = FilmKnowledge.__new__(FilmKnowledge)
+    fk.films = merged["films"]
+    fk.people = merged["people"]
+
+    suggestion = fk.suggest_for_person("Solomon Smith")
+    assert suggestion is not None
+    assert suggestion["title"] == "Blade Runner"
+    seed_titles = {f["title"] for f in FILM_DATABASE["films"]}
+    assert suggestion["title"] not in seed_titles
+
+    rec = fk.recommend_for_person("Solomon Smith")
+    assert rec is not None
+    assert "Blade Runner" in rec
+
+
 def test_merge_does_not_mutate_input(export_dir):
     export = load_letterboxd_export(export_dir)
     original_film_count = len(FILM_DATABASE["films"])
