@@ -82,11 +82,21 @@ Consequences a future agent must not "helpfully" undo:
   transitively via `llama-index-core`, which is why the pre-LlamaIndex branch
   never hit it.
 - **Milvus documents SSE4.2 as a hard minimum.** This CPU does not have it, so
-  #22 (D5) is very likely **not achievable on this hardware at all** --
-  it is a machine problem, not a config problem. Confirm before spending time
-  on `MILVUS_HOST` / `USE_MOCK_EMBEDDER` changes.
-- Real embeddings (`[full]`, sentence-transformers) pull torch, which has no
-  AVX to use here. Treat `USE_MOCK_EMBEDDER=false` as unproven on this host.
+  the Milvus half of #22 (D5) is very likely **not achievable on this hardware
+  at all** -- a machine problem, not a config problem. Not empirically
+  confirmed: starting the `milvus` profile risks OOM (7.5 GiB total, ~4 GiB
+  free, and Milvus standalone + etcd + minio wants more), so it was not tested
+  against the live stack.
+- **Torch does work here**, despite the missing AVX. Measured on the host:
+
+      docker run --rm python:3.12-slim sh -c \
+        "pip install torch --index-url https://download.pytorch.org/whl/cpu && \
+         python -c 'import torch; print(torch.rand(4,4).matmul(torch.rand(4,4)).shape)'"
+      # -> TORCH_OK 2.13.0+cpu / torch.Size([4, 4])
+
+  So `USE_MOCK_EMBEDDER=false` with the default in-memory `SimpleVectorStore`
+  is achievable and worth doing independently of Milvus. Split #22 rather than
+  treating "real embeddings" and "Milvus" as one item.
 
 If the deploy host is ever replaced with anything post-2010, revisit all three.
 
