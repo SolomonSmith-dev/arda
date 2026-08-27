@@ -24,7 +24,12 @@ dependencies = [
     # Tom Bombadil (Haiku, specialist). LangChain is gone from this
     # repo's direct deps; langgraph still pulls langchain-core in
     # transitively for its own type system.
-    "anthropic>=0.40",
+    # Bounded to the 1.x major on purpose. `>=0.40` unbounded meant a fresh
+    # Docker build resolved 1.x while local checkouts sat on 0.x, so the two
+    # environments ran different major versions of the SDK. That is how
+    # `temperature=0.2` shipped: valid on 0.x, removed from Messages.create
+    # in 1.x, TypeError on every production call. See tests/test_mock_sdk_parity.py.
+    "anthropic>=1,<2",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
 
