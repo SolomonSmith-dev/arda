@@ -128,8 +128,39 @@ def test_verified_block_suppressed_when_user_opted_out_of_films():
 
 
 @pytest.mark.asyncio
-async def test_chat_call_uses_low_temperature(fake_redis):
+async def test_chat_call_passes_only_parameters_the_sdk_accepts(fake_redis):
+    """Replaces test_chat_call_uses_low_temperature.
+
+    That test asserted ``temperature == 0.2`` was forwarded. The anthropic SDK
+    removed ``temperature`` from ``Messages.create`` in 1.x, so forwarding it
+    raised TypeError on every real call and took Tom down in production. The
+    test passed anyway because the chat mock accepted ``**kwargs``.
+
+    The mock is now a strict subset of the real signature, so simply reaching
+    the call proves the arguments are ones the SDK will accept. Asserting on
+    the recorded keys keeps that explicit.
+    """
     await tom_agent.get_response("scope-temp", "hello there", SOLOMON, redis_client=fake_redis)
 
     assert tom_agent._llm.calls, "expected the mock chat client to record a call"
-    assert tom_agent._llm.calls[-1]["kwargs"]["temperature"] == 0.2
+    call = tom_agent._llm.calls[-1]
+    assert set(call) == {"model", "system", "messages", "max_tokens", "stop_sequences", "timeout"}
+    assert "temperature" not in call
+
+
+async def test_chat_mock_rejects_parameters_the_real_sdk_lacks(fake_redis):
+    """The mock must not be more permissive than the client it stands in for.
+
+    ``temperature=0.2`` reached production and broke every Tom reply because
+    the mock's ``**kwargs`` swallowed it while the real
+    ``AsyncMessages.create`` raises TypeError. A mock that accepts more than
+    the real client cannot fail on the mismatch it exists to model.
+    """
+    with pytest.raises(TypeError):
+        await tom_agent._llm.messages.create(
+            model="mock",
+            system="s",
+            messages=[{"role": "user", "content": "hi"}],
+            max_tokens=16,
+            temperature=0.2,
+        )
