@@ -130,7 +130,10 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()
+    # arda_api_key has no default by design (fail closed, #50). pydantic
+    # populates it from the environment or .env at runtime, which mypy
+    # cannot see, so it reads the call as missing a required argument.
+    return Settings()  # type: ignore[call-arg]
 
 
 settings = get_settings()

@@ -8,7 +8,7 @@ the specialist's `BaseAgent.run` (see agents/base.py:25).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from agents.base import BaseAgent
 from agents.sauron.planner import Specialist
@@ -74,7 +74,7 @@ TOMBOMBADIL_TOOL: dict[str, Any] = {
 
 # Single source of truth: specialist name -> tool schema.
 # Adding a new specialist requires only a new entry here.
-SPECIALIST_TOOL_MAP: dict[str, dict[str, Any]] = {
+SPECIALIST_TOOL_MAP: dict[Specialist, dict[str, Any]] = {
     "earendil": EARENDIL_TOOL,
     "finrod": FINROD_TOOL,
     "tombombadil": TOMBOMBADIL_TOOL,
@@ -106,7 +106,11 @@ async def dispatch_tool(
     if specialist_name is None:
         raise UnknownToolError(f"unknown tool: {name}")
 
-    agent = specialists.get(specialist_name)
+    # `tool_name_to_specialist` is an open dict[str, str] so tests can inject
+    # arbitrary maps; narrow before indexing the typed specialist registry.
+    if specialist_name not in SPECIALIST_TOOL_MAP:
+        raise UnknownToolError(f"specialist '{specialist_name}' not registered")
+    agent = specialists.get(cast(Specialist, specialist_name))
     if agent is None:
         raise UnknownToolError(f"specialist '{specialist_name}' not registered")
 
