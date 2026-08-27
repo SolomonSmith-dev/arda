@@ -82,6 +82,18 @@ dev = [
 # default install (Finrod uses LlamaIndex MockEmbedding + SimpleVectorStore).
 # Add `[full]` when you want sentence-transformers (~1GB torch) and the
 # LlamaIndex Milvus integration.
+# Real semantic embeddings, no vector database. Split out of `[full]`
+# because the two halves have different hardware requirements: torch runs
+# fine on the deploy host's 2008 CPU (verified: it executes kernels without
+# AVX), while Milvus documents SSE4.2 as a hard minimum and that CPU lacks
+# it. Installing this alone gets genuine retrieval against the in-process
+# SimpleVectorStore. See AGENTS.md "The deploy host CPU is pre-2010".
+embeddings = [
+    "sentence-transformers>=3.0",
+    "llama-index-embeddings-huggingface>=0.7",
+]
+
+# Everything in `[embeddings]` plus the Milvus vector store.
 full = [
     "sentence-transformers>=3.0",
     "pymilvus>=2.4",

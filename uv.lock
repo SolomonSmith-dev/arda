@@ -227,6 +227,10 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
+embeddings = [
+    { name = "llama-index-embeddings-huggingface" },
+    { name = "sentence-transformers" },
+]
 full = [
     { name = "llama-index-embeddings-huggingface" },
     { name = "llama-index-vector-stores-milvus" },
@@ -246,6 +250,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=0.2" },
     { name = "langgraph-checkpoint-sqlite", specifier = ">=2.0" },
     { name = "llama-index-core", specifier = ">=0.14" },
+    { name = "llama-index-embeddings-huggingface", marker = "extra == 'embeddings'", specifier = ">=0.7" },
     { name = "llama-index-embeddings-huggingface", marker = "extra == 'full'", specifier = ">=0.7" },
     { name = "llama-index-llms-anthropic", specifier = ">=0.11" },
     { name = "llama-index-vector-stores-milvus", marker = "extra == 'full'", specifier = ">=1.1" },
@@ -263,11 +268,12 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "redis", extras = ["hiredis"], specifier = ">=5.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+    { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
     { name = "sentence-transformers", marker = "extra == 'full'", specifier = ">=3.0" },
     { name = "structlog", specifier = ">=24.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "full"]
+provides-extras = ["dev", "embeddings", "full"]
 
 [[package]]
 name = "ast-serialize"

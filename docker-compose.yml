@@ -16,7 +16,14 @@ services:
     restart: unless-stopped
 
   api:
-    build: .
+    # ARDA_EXTRAS selects optional dependency groups at build time. Empty by
+    # default (slim image, Finrod uses MockEmbedding). Set ARDA_EXTRAS=embeddings
+    # in .env and rebuild to get real sentence-transformers embeddings.
+    # Only this service builds the image; every other service reuses arda:0.3.0.
+    build:
+      context: .
+      args:
+        ARDA_EXTRAS: ${ARDA_EXTRAS:-}
     image: arda:0.3.0
     ports:
       - "5000:5000"
