@@ -83,7 +83,11 @@ def cmd_club_stats() -> str:
 
     rated_films: list[tuple[str, float, int]] = []
     for f in films:
-        ratings = [w["rating"] for w in f.get("watchers", []) if w.get("rating") is not None]
+        ratings = [
+            rating
+            for w in f.get("watchers", [])
+            if (rating := w.get("rating")) is not None
+        ]
         if ratings:
             rated_films.append((f["title"], sum(ratings) / len(ratings), len(ratings)))
 

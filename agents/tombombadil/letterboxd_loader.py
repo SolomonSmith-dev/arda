@@ -29,6 +29,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from agents.tombombadil.film_types import Film, FilmDatabase, Person, Watcher
 from core.logging import get_logger
 
 log = get_logger("agents.tombombadil.letterboxd")
@@ -110,7 +111,9 @@ class LetterboxdExport:
     favorites: list[str]
     entries: dict[str, LetterboxdEntry]
 
-    def watcher_record(self, film_themes_by_title: dict[str, list[str]] | None = None) -> dict:
+    def watcher_record(
+        self, film_themes_by_title: dict[str, list[str]] | None = None
+    ) -> Person:
         """Return a dict shaped like ``FILM_DATABASE['people'][name]``.
 
         ``preferred_themes`` is derived from the viewer's imported films'
@@ -281,8 +284,8 @@ def load_letterboxd_export(
 
 
 def merge_into_film_database(
-    base: dict, export: LetterboxdExport
-) -> dict:
+    base: FilmDatabase, export: LetterboxdExport
+) -> FilmDatabase:
     """Return a new film database dict with ``export`` merged into ``base``.
 
     For each entry: if the film already exists in ``base['films']`` (matched
@@ -292,10 +295,10 @@ def merge_into_film_database(
     New / theme-less films are enriched via :func:`infer_themes` so they
     participate in recommendation ranking (D3).
     """
-    films = [dict(f) for f in base.get("films", [])]
-    people = dict(base.get("people", {}))
+    films: list[Film] = [f.copy() for f in base.get("films", [])]
+    people: dict[str, Person] = dict(base.get("people", {}))
 
-    by_key: dict[str, dict] = {}
+    by_key: dict[str, Film] = {}
     for f in films:
         f["watchers"] = list(f.get("watchers", []))
         f["themes"] = list(f.get("themes", []))
@@ -330,7 +333,7 @@ def merge_into_film_database(
         already = next(
             (w for w in film["watchers"] if w.get("name") == export.name), None
         )
-        watcher_entry = {
+        watcher_entry: Watcher = {
             "name": export.name,
             "rating": entry.rating,
             "themes": inferred,
@@ -339,7 +342,15 @@ def merge_into_film_database(
         if already is None:
             film["watchers"].append(watcher_entry)
         else:
-            already.update({k: v for k, v in watcher_entry.items() if v not in (None, "", [])})
+            # Only overwrite fields the export actually carries: a blank
+            # review or a missing rating must not wipe a hand-written take.
+            # (``name`` is skipped because ``already`` was matched on it.)
+            if entry.rating is not None:
+                already["rating"] = entry.rating
+            if inferred:
+                already["themes"] = inferred
+            if entry.review:
+                already["take"] = entry.review
 
     film_themes_by_title = {
         f["title"].lower(): list(f.get("themes") or []) for f in films
