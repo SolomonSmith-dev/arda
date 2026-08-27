@@ -35,6 +35,17 @@ dependencies = [
     "llama-index-core>=0.14",
     "llama-index-llms-anthropic>=0.11",
 
+    # NumPy is pulled in transitively by llama-index-core. NumPy 2.x ships
+    # wheels built for the x86-64-v2 baseline, which the deploy host cannot
+    # execute: its CPU is an Intel Core 2 Duo P8600 (2008 Penryn) with no
+    # popcnt and no sse4_2. Importing numpy 2.x there raises
+    #   RuntimeError: NumPy was built with baseline optimizations:
+    #   (X86_V2) but your machine doesn't support: (X86_V2).
+    # which killed the API lifespan on every start. 1.26.x is the last
+    # series built against the plain x86-64 baseline and still has cp312
+    # wheels. Revisit if the deploy host is ever replaced.
+    "numpy<2",
+
     # MCP
     "mcp[cli]>=1.0",
 
