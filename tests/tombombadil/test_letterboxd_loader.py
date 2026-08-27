@@ -10,6 +10,8 @@ from agents.tombombadil.film_knowledge import (
     FilmKnowledge,
 )
 from agents.tombombadil.letterboxd_loader import (
+    LetterboxdEntry,
+    LetterboxdExport,
     load_letterboxd_export,
     merge_into_film_database,
 )
@@ -290,3 +292,85 @@ def test_env_beats_the_default(tmp_path, monkeypatch):
     monkeypatch.setenv("LETTERBOXD_VIEWER_NAME", "From Env")
     fk = FilmKnowledge(letterboxd_dir=_export_dir(tmp_path))
     assert "From Env" in _inception_watchers(fk)
+
+
+# ----- review findings: merge must not mutate or wipe curated data --------
+
+def _solomon_ran_export():
+    return LetterboxdExport(
+        name="Solomon Smith",
+        favorites=[],
+        entries={
+            "ran|1985": LetterboxdEntry(
+                title="Ran", year=1985, rating=9.0, review="", tags=[]
+            )
+        },
+    )
+
+
+def test_merge_does_not_mutate_its_base_argument():
+    """``f.copy()`` and ``list(watchers)`` are both shallow, so the per-watcher
+    writes used to land on the objects owned by ``base``. In production ``base``
+    IS the module-level FILM_DATABASE, so merging degraded the seed data for
+    every other reader in the process.
+
+    Built from a literal rather than FILM_DATABASE: earlier tests in this file
+    construct FilmKnowledge against an export dir, which under the old code
+    already mutated the singleton to a fixed point, so deriving from it here
+    would make this test pass or fail on ordering. That order dependence was
+    itself a symptom of the bug.
+    """
+    import copy
+
+    base = {
+        "films": [
+            {
+                "title": "Ran",
+                "year": 1985,
+                "themes": ["violence"],
+                "watchers": [
+                    {
+                        "name": "Solomon Smith",
+                        "rating": 7,
+                        "themes": ["violence", "power", "fate"],
+                        "take": "hand written",
+                    }
+                ],
+            }
+        ],
+        "people": {"Solomon Smith": {"avg_rating": 7, "films_watched": ["Ran"]}},
+    }
+    snapshot = copy.deepcopy(base)
+    merge_into_film_database(base, _solomon_ran_export())
+    assert base == snapshot
+
+
+def test_merge_keeps_curated_themes_when_the_export_carries_no_signal():
+    """infer_themes never returns empty -- it falls back to ["cinema"] -- so
+    the old `if inferred:` guard was always true and replaced a curated
+    ["violence", "power", "fate"] with ["cinema"] on any ratings-only import.
+    """
+    merged = merge_into_film_database(FILM_DATABASE, _solomon_ran_export())
+    ran = next(f for f in merged["films"] if f["title"] == "Ran")
+    watcher = next(w for w in ran["watchers"] if w["name"] == "Solomon Smith")
+    assert watcher["themes"] == ["violence", "power", "fate"]
+    # The rating still comes through: only theme-less imports are ignored.
+    assert watcher["rating"] == 9.0
+
+
+def test_merge_still_applies_themes_the_export_really_carries():
+    export = LetterboxdExport(
+        name="Solomon Smith",
+        favorites=[],
+        entries={
+            "ran|1985": LetterboxdEntry(
+                title="Ran", year=1985, rating=9.0,
+                review="a study of betrayal and revenge", tags=[],
+            )
+        },
+    )
+    merged = merge_into_film_database(FILM_DATABASE, export)
+    ran = next(f for f in merged["films"] if f["title"] == "Ran")
+    watcher = next(w for w in ran["watchers"] if w["name"] == "Solomon Smith")
+    assert watcher["themes"] != ["cinema"]
+    assert watcher["take"] == "a study of betrayal and revenge"
