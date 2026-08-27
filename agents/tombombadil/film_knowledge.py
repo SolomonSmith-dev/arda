@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 from typing import Any
 
+from agents.tombombadil.film_types import Film, FilmDatabase, Person
 from agents.tombombadil.letterboxd_loader import (
     load_letterboxd_export,
     merge_into_film_database,
@@ -24,7 +25,7 @@ from core.logging import get_logger
 
 log = get_logger("agents.tombombadil.film_knowledge")
 
-FILM_DATABASE = {
+FILM_DATABASE: FilmDatabase = {
     "films": [
         {
             "title": "Ran",
@@ -134,8 +135,8 @@ class FilmKnowledge:
             else:
                 log.warning("letterboxd_dir_missing", path=str(path))
 
-        self.films = merged["films"]
-        self.people = merged["people"]
+        self.films: list[Film] = merged["films"]
+        self.people: dict[str, Person] = merged["people"]
 
         if self.redis:
             self._load_to_redis()
@@ -144,16 +145,16 @@ class FilmKnowledge:
         self.redis.set("film_knowledge:films", json.dumps(self.films))
         self.redis.set("film_knowledge:people", json.dumps(self.people))
 
-    def get_person_profile(self, name: str) -> dict[str, Any]:
+    def get_person_profile(self, name: str) -> Person:
         return self.people.get(name, {})
 
-    def get_film(self, title: str) -> dict[str, Any] | None:
+    def get_film(self, title: str) -> Film | None:
         for film in self.films:
             if film["title"].lower() == title.lower():
                 return film
         return None
 
-    def suggest_for_person(self, name: str) -> dict[str, Any] | None:
+    def suggest_for_person(self, name: str) -> Film | None:
         person = self.get_person_profile(name)
         if not person:
             return None
@@ -217,8 +218,10 @@ class FilmKnowledge:
         rated: list[tuple[str, int | None, float]] = []
         for f in self.films:
             for w in f.get("watchers", []):
-                if (w.get("name") or "").lower() == key.lower() and w.get("rating") is not None:
-                    rated.append((f["title"], f.get("year"), float(w["rating"])))
+                if (w.get("name") or "").lower() != key.lower():
+                    continue
+                if (rating := w.get("rating")) is not None:
+                    rated.append((f["title"], f.get("year"), float(rating)))
         rated.sort(key=lambda x: x[0].lower())
         if max_films is not None:
             rated = rated[:max_films]
@@ -268,10 +271,11 @@ class FilmKnowledge:
         # by this viewer. Surface their highest-rated history as social
         # proof rather than refusing.
         rated = [
-            (f["title"], f.get("year"), float(w["rating"]))
+            (f["title"], f.get("year"), float(rating))
             for f in self.films
             for w in f.get("watchers", [])
-            if (w.get("name") or "").lower() == key.lower() and w.get("rating") is not None
+            if (w.get("name") or "").lower() == key.lower()
+            and (rating := w.get("rating")) is not None
         ]
         rated.sort(key=lambda x: -x[2])
         if not rated:
