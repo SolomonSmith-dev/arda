@@ -96,10 +96,31 @@ The ``legacy_api/earendil_api.py`` rollback artifact has been removed; ``api/mai
 - **Image size** can be trimmed later by switching to a CPU-only
   torch wheel and dropping CUDA deps from the install set.
 
+## Step 0: reconcile the host onto `main`
+
+`home-server` has been running `claude/pr-6-hardening` for months, a tree
+that predates the LangGraph orchestrator, the LlamaIndex Finrod migration,
+and CI. **`scripts/verify-d4-d5.sh` does not exist on that branch**, so D4
+and D5 cannot be verified until the host is on `main`. See AGENTS.md
+"Deploy host reality".
+
+```bash
+ssh solomon@100.112.3.116          # /usr/bin/ssh; expect a Tailscale browser check
+cd /home/solomon/Code/arda-stack/arda
+./scripts/reconcile-deploy-host.sh
+```
+
+The script backs up the current HEAD to a `prod-backup-<timestamp>` branch,
+checks that `.env` has a non-empty `ARDA_API_KEY` (the API fails closed at
+import without it), preserves whichever compose profiles are already
+running, rebuilds, and health-checks. It prints a rollback command at every
+step and never pushes, since the host has no GitHub credentials. The repo is
+public, so its fetch needs none.
+
 ## Operator verification (D4 / D5)
 
-On the **deploy host** (Docker is required; cloud dev VMs without Docker
-cannot close these). From the repo root:
+On the **deploy host**, after step 0 (Docker is required; cloud dev VMs
+without Docker cannot close these). From the repo root:
 
 ```bash
 # Enable profiles
