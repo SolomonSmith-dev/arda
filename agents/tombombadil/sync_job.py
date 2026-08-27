@@ -19,7 +19,7 @@ import httpx
 
 from agents.galadriel.models import Job, JobDelivery, JobPayload, JobSchedule
 from agents.galadriel.scheduler import Schedule, next_run_ms
-from agents.galadriel.store import save_job
+from agents.galadriel.store import read_job, save_job
 from agents.tombombadil import delivery, metrics
 from agents.tombombadil.letterboxd_rss import DiaryEntry, parse_feed_text
 from agents.tombombadil.persistent_memory import save_note
@@ -195,7 +195,24 @@ def ensure_letterboxd_sync_cron(
 
     The job uses ``payload.kind="systemEvent"`` with ``text="letterboxd_sync"``
     so Galadriel's worker can dispatch it locally (no HTTP round-trip).
+
+    Genuinely idempotent: if the job already exists it is returned untouched.
+    This runs from the API lifespan (``api/main.py``), so it fires on every
+    container restart. Rebuilding and ``save_job``-ing a fresh Job there is a
+    full overwrite -- an operator who disabled this job or edited its cron
+    expression to stop a misbehaving sync would find it silently re-enabled
+    on the default schedule at the next restart.
     """
+    existing = read_job(redis, LETTERBOXD_SYNC_JOB_ID)
+    if existing is not None:
+        log.info(
+            "letterboxd_sync_cron_already_present",
+            job_id=existing.id,
+            enabled=existing.enabled,
+            cron=existing.schedule.expr,
+        )
+        return existing
+
     sched = Schedule(kind="cron", expr=cron_expr, tz=tz)
     now_ms = int(datetime.now(UTC).timestamp() * 1000)
     job = Job(

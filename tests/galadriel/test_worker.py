@@ -201,3 +201,29 @@ def test_reschedule_cron_advances(r):
     assert persisted is not None
     assert persisted.next_run_at_ms is not None
     assert persisted.next_run_at_ms > 1_000
+
+
+# ----- review finding: a handler that reports errors is not a clean run ---
+
+def test_result_errors_are_recorded_not_stamped_ok(r, monkeypatch):
+    """run_sync returns a populated `errors` list instead of raising, so the
+    except branch never fires. run_one used to stamp last_status="ok",
+    consecutive_errors=0 and last_error=None regardless -- an operator saw a
+    healthy daily job that had never actually synced anything.
+    """
+    from agents.tombombadil import sync_job
+
+    job = _cron_job(payload=JobPayload(kind="systemEvent", text="letterboxd_sync"))
+
+    class _Result:
+        fetched = 0
+        new = 0
+        saved = 0
+        errors = ["LETTERBOXD_USERNAME not set"]
+
+    monkeypatch.setattr(sync_job, "run_sync", lambda _r: _Result())
+    result_job = run_one(_client_returning({"status": "ok"}), r, job)
+
+    assert result_job.last_status != "ok", result_job.last_status
+    assert result_job.consecutive_errors == 1
+    assert "LETTERBOXD_USERNAME" in (result_job.last_error or "")

@@ -154,16 +154,32 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
 
         announce(job, result)
         duration_ms = int((time.monotonic() - started) * 1000)
+        # A handler that reports failure in its result rather than raising --
+        # run_sync returns a populated `errors` list instead of throwing --
+        # must not be recorded as a clean run. Stamping "ok" unconditionally
+        # meant a sync that fetched nothing, forever, showed last_status=ok,
+        # consecutive_errors=0 and no last_error: an operator sees a healthy
+        # daily job that has never worked.
+        run_errors = [str(e) for e in (result.get("errors") or [])]
         job = job.model_copy(
             update={
                 "last_run_at_ms": int(time.time() * 1000),
-                "last_status": "ok",
+                "last_status": "ok" if not run_errors else str(result.get("status")),
                 "last_duration_ms": duration_ms,
-                "last_error": None,
-                "consecutive_errors": 0,
+                "last_error": "; ".join(run_errors)[:500] if run_errors else None,
+                "consecutive_errors": 0 if not run_errors else job.consecutive_errors + 1,
             }
         )
-        log.info("job_run_ok", job_id=job.id, duration_ms=duration_ms)
+        if run_errors:
+            log.warning(
+                "job_run_reported_errors",
+                job_id=job.id,
+                duration_ms=duration_ms,
+                status=result.get("status"),
+                errors=run_errors,
+            )
+        else:
+            log.info("job_run_ok", job_id=job.id, duration_ms=duration_ms)
 
     except Exception as e:
         duration_ms = int((time.monotonic() - started) * 1000)

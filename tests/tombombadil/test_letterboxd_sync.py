@@ -175,3 +175,36 @@ def test_ensure_letterboxd_sync_cron_custom_expr(r):
     job = sync_job.ensure_letterboxd_sync_cron(r, cron_expr="30 5 * * *", tz="UTC")
     assert job.schedule.expr == "30 5 * * *"
     assert job.schedule.tz == "UTC"
+
+
+def test_ensure_cron_does_not_overwrite_an_operator_edit():
+    """ensure_letterboxd_sync_cron runs from the API lifespan, so it fires on
+    every container restart. It used to rebuild a fresh Job and save_job it --
+    a full SET -- so an operator who disabled the job or changed its cron
+    expression to stop a misbehaving sync found it silently re-enabled on the
+    default schedule at the next restart.
+    """
+    import fakeredis
+
+    from agents.galadriel.store import read_job, save_job
+    from agents.tombombadil.sync_job import (
+        LETTERBOXD_SYNC_JOB_ID,
+        ensure_letterboxd_sync_cron,
+    )
+
+    r = fakeredis.FakeRedis(decode_responses=True)
+    created = ensure_letterboxd_sync_cron(r)
+
+    # Operator disables it and moves it to weekly.
+    edited = created.model_copy(
+        update={"enabled": False, "schedule": created.schedule.model_copy(
+            update={"expr": "0 6 * * 0"}
+        )}
+    )
+    save_job(r, edited)
+
+    ensure_letterboxd_sync_cron(r)  # simulate an API restart
+
+    stored = read_job(r, LETTERBOXD_SYNC_JOB_ID)
+    assert stored.enabled is False
+    assert stored.schedule.expr == "0 6 * * 0"
