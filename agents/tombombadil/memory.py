@@ -36,6 +36,43 @@ HISTORY_TTL_SECONDS = 7 * 24 * 3600
 RECALL_SCORE_FLOOR = 0.35
 PREF_KEYS = frozenset({"suppress_films", "preferred_tone", "do_not_log"})
 
+# Prefs that are read by exact string equality against "1" -- see
+# ``agents.tombombadil.agent._suppress_films`` and the ``do_not_log`` check in
+# ``get_response``. Anything else stored under these keys is silently inert, so
+# a value like "yes" reads as "off" while looking like it was accepted. These
+# two are opt-outs, so that failure mode is a privacy problem, not a cosmetic
+# one: the user is told their request was honoured and it was not.
+BOOL_PREF_KEYS = frozenset({"suppress_films", "do_not_log"})
+
+_TRUTHY = frozenset({"1", "yes", "y", "true", "on", "enable", "enabled"})
+_FALSY = frozenset({"0", "no", "n", "false", "off", "disable", "disabled"})
+
+
+class InvalidPrefValueError(ValueError):
+    """Raised for a boolean pref given a value that is neither on nor off."""
+
+
+def normalize_pref_value(key: str, value: str) -> str | None:
+    """Canonicalise ``value`` for ``key``.
+
+    Returns the string to store, or ``None`` meaning "clear this pref".
+    Free-text prefs (``preferred_tone``) pass through untouched. Boolean prefs
+    are coerced to exactly ``"1"`` or cleared, and raise
+    :class:`InvalidPrefValueError` on anything unrecognised rather than storing
+    a value that would read as off.
+    """
+    if key not in BOOL_PREF_KEYS:
+        return value
+    lowered = value.strip().lower()
+    if lowered in _TRUTHY:
+        return "1"
+    if lowered in _FALSY:
+        return None
+    raise InvalidPrefValueError(
+        f"{value!r} is not a yes/no value for {key!r}; "
+        f"try one of: {', '.join(sorted(_TRUTHY))} / {', '.join(sorted(_FALSY))}"
+    )
+
 
 @dataclass(frozen=True)
 class Turn:

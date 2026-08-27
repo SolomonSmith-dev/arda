@@ -223,3 +223,21 @@ async def test_owner_prompt_does_include_the_rating_index(fake_redis):
     system_text = captured["system"]
     assert "/10" in system_text
     assert "Highest-rated" in system_text
+
+
+@pytest.mark.asyncio
+async def test_stranger_first_message_optout_is_honoured(fake_redis):
+    """D7 regression: the stranger-onboarding branch returned a template
+    before the fact extractor ran, so a stranger whose *first* message was an
+    opt-out got the onboarding paragraph and the pref was silently dropped.
+    An opt-out in a first message is the one most worth honouring.
+    """
+    await tom_agent.get_response(
+        "tom:hist:ch:newbie",
+        "stop talking about films",
+        STRANGER,
+        fake_redis,
+        offer_stranger_onboarding=True,
+    )
+    prefs = tom_memory.get_prefs(fake_redis, STRANGER.discord_id)
+    assert prefs.get("suppress_films") == "1", prefs
