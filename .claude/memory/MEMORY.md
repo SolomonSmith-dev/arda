@@ -1,1 +1,0 @@
-- [Clean code, zero tech debt](feedback_clean_code_no_tech_debt.md) — applies to all projects: avoid speculative tests, unused helpers, premature abstractions, scope creep
