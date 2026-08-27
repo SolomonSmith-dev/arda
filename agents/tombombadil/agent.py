@@ -394,6 +394,9 @@ async def get_response(
             memory.append_turn(redis_client, scope_key, viewer, "assistant", onboarding_reply)
         except Exception as e:
             log.warning("memory_append_failed", scope=scope_key, exc=str(e))
+        await _maybe_extract_facts(
+            redis_client, viewer, prefs, text, onboarding_reply, scope_key
+        )
         return onboarding_reply
 
     system_prompt = _build_system_prompt(viewer, prefs, recalled, text)
@@ -479,14 +482,35 @@ async def get_response(
     except Exception as e:
         log.warning("memory_append_failed", scope=scope_key, exc=str(e))
 
-    if prefs.get("do_not_log") != "1":
-        try:
-            facts = extract_facts(text, reply, viewer)
-            await _persist_facts(redis_client, viewer, facts, scope_key)
-        except Exception as e:
-            log.warning("fact_extraction_failed", scope=scope_key, exc=str(e))
+    await _maybe_extract_facts(redis_client, viewer, prefs, text, reply, scope_key)
 
     return reply
+
+
+async def _maybe_extract_facts(
+    redis_client,
+    viewer: Viewer,
+    prefs: dict[str, str],
+    text: str,
+    reply: str,
+    scope_key: str,
+) -> None:
+    """Run the fact extractor unless the viewer has opted out of logging.
+
+    Hoisted out of ``get_response`` so the D7 stranger-onboarding branch can
+    call it too. That branch returns a template before reaching the LLM, and
+    used to return before this ran -- so a stranger whose *first* message was
+    "stop talking about films" got the onboarding paragraph and their opt-out
+    was silently dropped. An opt-out in a first message is exactly the one
+    most worth honouring.
+    """
+    if prefs.get("do_not_log") == "1":
+        return
+    try:
+        facts = extract_facts(text, reply, viewer)
+        await _persist_facts(redis_client, viewer, facts, scope_key)
+    except Exception as e:
+        log.warning("fact_extraction_failed", scope=scope_key, exc=str(e))
 
 
 async def _persist_facts(

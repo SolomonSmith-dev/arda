@@ -161,8 +161,18 @@ def cmd_setpref(redis_client, viewer: Viewer, key: str, value: str) -> str:
     if value.lower() in ("", "clear", "unset"):
         memory.clear_pref(redis_client, viewer.discord_id, key)
         return f"Cleared `{key}`."
-    memory.set_pref(redis_client, viewer.discord_id, key, value)
-    return f"Set `{key}` = `{value}`."
+    try:
+        normalized = memory.normalize_pref_value(key, value)
+    except memory.InvalidPrefValueError as e:
+        # Never confirm an opt-out that would not take effect.
+        return f"Couldn't set `{key}`: {e}"
+    if normalized is None:
+        memory.clear_pref(redis_client, viewer.discord_id, key)
+        return f"Cleared `{key}` (read `{value}` as off)."
+    memory.set_pref(redis_client, viewer.discord_id, key, normalized)
+    if normalized != value:
+        return f"Set `{key}` = `{normalized}` (from `{value}`)."
+    return f"Set `{key}` = `{normalized}`."
 
 
 def cmd_unrate(redis_client, viewer: Viewer, film: str) -> str:

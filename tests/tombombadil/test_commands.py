@@ -243,3 +243,38 @@ def test_cmd_setrole_override(r):
     viewer = resolve("555", "someone", redis=r)
     assert viewer.tier is Tier.REGULAR
     assert viewer.canonical_name == "Wes Prater"
+
+
+# ----- review finding: boolean prefs must not accept inert values ---------
+
+@pytest.mark.parametrize("value", ["yes", "y", "true", "on", "1", "ENABLED"])
+def test_setpref_normalizes_truthy_values_to_the_one_the_code_reads(r, value):
+    """`suppress_films` / `do_not_log` are read by exact equality against "1"
+    (agent.py `_suppress_films` and the do_not_log check). Storing "yes"
+    confirmed success while leaving the pref inert -- and both are opt-outs,
+    so the user was told a privacy request was honoured when it was not.
+    """
+    reply = tom_commands.cmd_setpref(r, SOLOMON, "do_not_log", value)
+    assert "Set" in reply
+    assert memory.get_prefs(r, SOLOMON.discord_id).get("do_not_log") == "1"
+
+
+@pytest.mark.parametrize("value", ["no", "off", "false", "0", "disabled"])
+def test_setpref_falsy_values_clear_the_pref(r, value):
+    tom_commands.cmd_setpref(r, SOLOMON, "suppress_films", "yes")
+    reply = tom_commands.cmd_setpref(r, SOLOMON, "suppress_films", value)
+    assert "Cleared" in reply
+    assert "suppress_films" not in memory.get_prefs(r, SOLOMON.discord_id)
+
+
+def test_setpref_refuses_an_unrecognised_boolean_rather_than_confirming(r):
+    reply = tom_commands.cmd_setpref(r, SOLOMON, "do_not_log", "banana")
+    assert "Couldn't set" in reply
+    assert "do_not_log" not in memory.get_prefs(r, SOLOMON.discord_id)
+
+
+def test_setpref_leaves_free_text_prefs_alone(r):
+    reply = tom_commands.cmd_setpref(r, SOLOMON, "preferred_tone", "dry and terse")
+    assert "Set" in reply
+    prefs = memory.get_prefs(r, SOLOMON.discord_id)
+    assert prefs["preferred_tone"] == "dry and terse"
