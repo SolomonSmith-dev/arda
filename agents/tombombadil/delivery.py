@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
+
+import discord
 
 from core.logging import get_logger
 from core.redis_client import get_redis_async, get_redis_sync
@@ -50,6 +52,16 @@ async def _post_one(bot: discord_commands.Bot, payload: dict) -> None:
     except Exception as exc:
         log.warning("delivery_channel_unreachable", channel_id=channel_id, exc=str(exc))
         return
+    # A misconfigured channel id can resolve to a forum or category, which
+    # cannot receive messages. Without this the AttributeError fell into the
+    # generic handler below and logged 'post failed', hiding the real cause.
+    if not isinstance(channel, discord.abc.Messageable):
+        log.warning(
+            "delivery_channel_not_messageable",
+            channel_id=channel_id,
+            kind=type(channel).__name__,
+        )
+        return
     try:
         await channel.send(text)
         log.info("discord_announce_posted", channel_id=channel_id, text_preview=text[:80])
@@ -65,7 +77,7 @@ async def subscriber_loop(bot: discord_commands.Bot) -> None:
     log.info("delivery_subscriber_started", queue=QUEUE_KEY)
     while True:
         try:
-            item = await r.blpop([QUEUE_KEY], timeout=BLPOP_TIMEOUT_SECONDS)
+            item = await cast(Any, r.blpop([QUEUE_KEY], timeout=BLPOP_TIMEOUT_SECONDS))
         except asyncio.CancelledError:
             log.info("delivery_subscriber_cancelled")
             raise
@@ -90,8 +102,12 @@ def start_subscriber(bot: discord_commands.Bot) -> asyncio.Task:
     """Schedule the subscriber on the bot's running loop. Idempotent --
     repeated calls return the existing task.
     """
-    if getattr(bot, "_tom_delivery_task", None) is not None and not bot._tom_delivery_task.done():
-        return bot._tom_delivery_task
+    # discord.py's Bot has no slot for this; we stash the task on the
+    # instance so repeated calls are idempotent. getattr/setattr keeps that
+    # deliberate monkeypatch legible instead of an attr-defined ignore.
+    existing: asyncio.Task | None = getattr(bot, "_tom_delivery_task", None)
+    if existing is not None and not existing.done():
+        return existing
     task = asyncio.create_task(subscriber_loop(bot))
-    bot._tom_delivery_task = task  # type: ignore[attr-defined]
+    setattr(bot, "_tom_delivery_task", task)
     return task

@@ -137,12 +137,10 @@ def _verified_film_facts(text: str, viewer_name: str) -> str | None:
         )
         if watcher is None:
             facts.append(f"- {title}: {viewer_name} has NOT rated this")
-        elif watcher.get("rating") is None:
+        elif (rating := watcher.get("rating")) is None:
             facts.append(f"- {title}: {viewer_name} watched but did not rate")
         else:
-            facts.append(
-                f"- {title}: {viewer_name} rated this {float(watcher['rating']):g}/10"
-            )
+            facts.append(f"- {title}: {viewer_name} rated this {float(rating):g}/10")
     if not facts:
         return None
     return (

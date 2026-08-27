@@ -59,7 +59,8 @@ def history_scope_key(event) -> str:
     channel id; per-thread scoping can land in a later PR).
     """
     channel = getattr(event, "channel", None)
-    is_dm = getattr(channel, "type", None) and str(channel.type).endswith("private")
+    channel_type = getattr(channel, "type", None)
+    is_dm = bool(channel_type) and str(channel_type).endswith("private")
     actor = getattr(event, "author", None) or getattr(event, "user", None)
     if is_dm and actor is not None:
         return f"tom:hist:dm:{actor.id}"
