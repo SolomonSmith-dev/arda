@@ -24,12 +24,22 @@ dependencies = [
     # Tom Bombadil (Haiku, specialist). LangChain is gone from this
     # repo's direct deps; langgraph still pulls langchain-core in
     # transitively for its own type system.
-    # Bounded to the 1.x major on purpose. `>=0.40` unbounded meant a fresh
-    # Docker build resolved 1.x while local checkouts sat on 0.x, so the two
-    # environments ran different major versions of the SDK. That is how
-    # `temperature=0.2` shipped: valid on 0.x, removed from Messages.create
-    # in 1.x, TypeError on every production call. See tests/test_mock_sdk_parity.py.
-    "anthropic>=1,<2",
+    # Bounded to 0.x, and the upper bound is load-bearing.
+    #
+    # `>=0.40` unbounded meant a fresh Docker build resolved 1.x while local
+    # checkouts sat on 0.x -- two environments on different MAJOR versions of
+    # the SDK, which is how `temperature=0.2` shipped and broke production.
+    #
+    # The bound is 1 rather than 2 because llama-index-llms-anthropic is not
+    # yet compatible with anthropic 1.x: its Anthropic.__init__ declares
+    # `temperature: float = 0.1` and forwards it unconditionally to
+    # Messages.create, which 1.x removed. There is no way to suppress it from
+    # the caller, so Finrod's synthesis fails on 1.x no matter what we pass.
+    # Verified on the deploy host: retrieval returned real scored sources
+    # while every answer came back empty.
+    #
+    # Revisit when llama-index-llms-anthropic supports anthropic 1.x.
+    "anthropic>=0.40,<1",
     "langgraph>=0.2",
     "langgraph-checkpoint-sqlite>=2.0",
 
