@@ -37,23 +37,25 @@ def test_recommend_for_group_valid_blend_handles_full_catalog(knowledge):
     """
     reply = club.recommend_for_group(knowledge, ["Solomon Smith", "Brian"])
     assert isinstance(reply, str)
-    assert reply  # non-empty
-    # Either a recommendation header or the "everyone has watched" message.
-    assert ("For Solomon Smith, Brian" in reply) or ("already watched" in reply.lower())
+    # This outcome is determinate, so assert it exactly. The old form was
+    # hedged with `or "For Solomon Smith, Brian" in reply`, which would have
+    # passed on either branch and told us nothing about which one ran.
+    assert "already watched the catalog's overlap" in reply
 
 
-def test_recommend_for_group_with_unwatched_overlap(monkeypatch, knowledge):
-    """Inject a viewer who hasn't watched a catalog film so the
-    recommender has something to suggest. Verifies the happy path
-    produces the structured Markdown response.
+def test_recommend_for_group_single_viewer_exhausts_the_seed_catalogue(knowledge):
+    """A single seed viewer also lands on the "nothing left" branch.
+
+    This test used to be called ``..._with_unwatched_overlap`` and claimed
+    "we expect La Haine", but it never reached the recommendation branch --
+    the `or ("already watched" in reply.lower())` hedge absorbed the real
+    outcome, so the name and docstring described behaviour it never
+    exercised. The recommendation branch is covered by
+    ``test_recommend_for_group_renders_themes_without_crashing``, which
+    builds a catalogue that actually has something unwatched to suggest.
     """
-    # Brian seed has only watched "Ran". So if we pair Brian with
-    # someone (himself) the unwatched set is {La Haine, Ghost Dog}.
     reply = club.recommend_for_group(knowledge, ["Brian"])
-    assert reply
-    # Brian's themes are tragedy/emotional impact -- Ran is closest,
-    # but Brian's already watched it, so we expect La Haine.
-    assert ("For Brian" in reply) or ("already watched" in reply.lower())
+    assert "already watched the catalog's overlap" in reply
 
 
 def test_recommend_for_group_skips_unknown_names(knowledge):
