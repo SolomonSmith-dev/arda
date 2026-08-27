@@ -189,44 +189,52 @@ class FilmKnowledge:
                 return key
         return None
 
-    def get_user_summary(self, name: str, recent_limit: int = 30) -> str | None:
-        """Compact summary for the LLM system prompt: favorites + recent rated.
+    def get_user_summary(self, name: str, max_films: int | None = None) -> str | None:
+        """Full rating index for the LLM system prompt: every rated film,
+        alphabetized, so the model can find any title the user asks about.
 
         Returns ``None`` if the user isn't in ``self.people``. Callers
         decide what to render for unknown viewers (see
         :mod:`agents.tombombadil.agent` for the stranger fallback).
+
+        This used to take the top ``recent_limit=30`` by rating. With a
+        ~900-film Letterboxd export merged in, that silently dropped ~870
+        films, and Tom told people he had no record of films they had
+        rated years ago. The system prompt states that this list is the
+        only source of truth and complete, so it has to actually be
+        complete -- a truncated list turns that instruction into a
+        confident denial. ~30 chars/line x 900 films is ~7K tokens,
+        comfortable in Haiku's window.
+
+        ``max_films`` stays available for callers that genuinely need a
+        bound, but nothing truncates by default.
         """
         key = self._resolve_person_key(name)
         if key is None:
             return None
         person = self.people[key]
 
-        favorites = [
-            f["title"]
-            for f in self.films
-            if any(
-                (w.get("name") or "").lower() == key.lower()
-                and (w.get("rating") or 0) >= 9
-                for w in f.get("watchers", [])
-            )
-        ]
-
-        rated_by_user: list[tuple[str, float]] = []
+        rated: list[tuple[str, int | None, float]] = []
         for f in self.films:
             for w in f.get("watchers", []):
                 if (w.get("name") or "").lower() == key.lower() and w.get("rating") is not None:
-                    rated_by_user.append((f["title"], float(w["rating"])))
-        rated_by_user.sort(key=lambda x: -x[1])
+                    rated.append((f["title"], f.get("year"), float(w["rating"])))
+        rated.sort(key=lambda x: x[0].lower())
+        if max_films is not None:
+            rated = rated[:max_films]
 
-        lines = [f"Viewer: {key} (avg {person.get('avg_rating', 0)})"]
-        if favorites[:8]:
-            lines.append("Top-rated: " + ", ".join(favorites[:8]))
-        if rated_by_user:
-            top = rated_by_user[:recent_limit]
-            lines.append(
-                "Recent ratings: "
-                + ", ".join(f"{t} ({r:g}/10)" for t, r in top)
-            )
+        if not rated:
+            return None
+
+        lines = [f"Viewer: {key} (avg {person.get('avg_rating', 0)}, {len(rated)} films rated)"]
+        # Keep the favorites prominent: the alphabetical dump below is for
+        # lookup, not for answering "what are your highest rated".
+        top = sorted(rated, key=lambda x: -x[2])[:10]
+        lines.append("Highest-rated: " + ", ".join(f"{t} ({r:g}/10)" for t, _y, r in top))
+        lines.append("All rated films (alphabetical):")
+        for title, year, rating in rated:
+            year_str = f" ({year})" if year else ""
+            lines.append(f"- {title}{year_str}: {rating:g}/10")
         return "\n".join(lines)
 
     def get_context_summary(self) -> str:
