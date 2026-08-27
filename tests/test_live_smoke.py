@@ -54,3 +54,39 @@ async def test_sauron_real_anthropic_routes_and_returns():
     # provider returned something the orchestrator could wrap.
     assert result.status in (TaskStatus.COMPLETED, TaskStatus.QUEUED)
     assert result.error is None
+
+
+# The tiers that actually call an LLM. Earendil (executor) is a regex
+# planner and has no model to validate.
+LLM_TIERS = ["orchestrator", "retriever", "specialist"]
+
+
+@pytest.mark.skipif(not _have_real_keys(), reason="real ANTHROPIC_API_KEY not configured")
+@pytest.mark.parametrize("tier", LLM_TIERS)
+def test_configured_model_id_is_accepted_by_the_api(tier):
+    """Every configured model ID must be one Anthropic will actually serve.
+
+    ``use_mock_llm`` defaults to true, so the whole suite runs against
+    ``MockAnthropicClient`` and never sends a model ID anywhere. That
+    makes a wrong ID invisible to all other tests by construction -- it
+    surfaces only as a 404 on the first real request in production.
+    ``orchestrator_model`` sat at the non-existent ``claude-opus-4-7``
+    for months exactly this way.
+
+    One minimal real call per tier closes that gap. ``max_tokens=1``
+    keeps the whole parametrised run to a few tokens; a bad ID raises
+    ``anthropic.NotFoundError`` before any generation happens.
+    """
+    import anthropic
+
+    from core.config import settings
+
+    model = settings.model_for_tier(tier)
+    response = anthropic.Anthropic().messages.create(
+        model=model,
+        max_tokens=1,
+        messages=[{"role": "user", "content": "hi"}],
+    )
+    # Anthropic echoes the resolved model, which also catches a silent
+    # alias remap (e.g. a "-latest" suffix pointing somewhere unexpected).
+    assert response.model, f"{tier} tier model {model!r} returned no model in the response"
