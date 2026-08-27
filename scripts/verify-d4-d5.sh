@@ -4,6 +4,11 @@
 # Exit 0 = checks look good; non-zero = something still missing.
 set -euo pipefail
 
+# galadriel and milvus sit behind compose profiles. Naming a profile-gated
+# service as an argument to `compose ps` resolves against the *active* set,
+# so without this the lookup can error and read as a spurious FAIL.
+export COMPOSE_PROFILES=cron,milvus,discord,telegram
+
 fail=0
 ok() { printf 'OK  %s\n' "$*"; }
 bad() { printf 'FAIL %s\n' "$*"; fail=1; }
@@ -15,16 +20,19 @@ else
   bad "galadriel not running — enable with: docker compose --profile cron up -d"
 fi
 
-if docker compose exec -T redis redis-cli EXISTS tom_letterboxd_sync >/dev/null 2>&1 \
-  || docker compose exec -T redis redis-cli KEYS 'cron:job:*' 2>/dev/null | grep -q .; then
-  ok "cron job keys present in Redis (seeded job or watch-party)"
+# `redis-cli EXISTS k` prints 0 or 1 and exits 0 either way, so testing its
+# *exit status* is always true whenever Redis answers at all. Compare the
+# printed value. The key is namespaced (agents/galadriel/store.py:17), so the
+# bare name never existed.
+seeded="$(docker compose exec -T redis redis-cli EXISTS cron:job:tom_letterboxd_sync 2>/dev/null | tr -d '\r')"
+any_job="$(docker compose exec -T redis redis-cli --no-raw KEYS 'cron:job:*' 2>/dev/null | grep -c . || true)"
+
+if [[ "$seeded" == "1" ]]; then
+  ok "cron:job:tom_letterboxd_sync is seeded"
+elif [[ "${any_job:-0}" -gt 0 ]]; then
+  ok "no Letterboxd sync job, but ${any_job} other cron:job:* key(s) exist"
 else
-  # Soft signal: API lifespan should seed tom_letterboxd_sync; key name is cron:job:tom_letterboxd_sync
-  if docker compose exec -T redis redis-cli EXISTS cron:job:tom_letterboxd_sync 2>/dev/null | grep -q 1; then
-    ok "cron:job:tom_letterboxd_sync exists"
-  else
-    bad "no Letterboxd sync cron job found — restart api so lifespan seeds it, or run /sync as owner"
-  fi
+  bad "no cron:job:* keys at all — restart api so the lifespan seeds it, or run /sync as owner"
 fi
 
 echo
