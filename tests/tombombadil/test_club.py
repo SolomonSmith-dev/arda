@@ -170,3 +170,19 @@ def test_discord_announce_payload_prefers_reply_field():
     assert payload["text"] == "It's Friday."
     assert payload["channel_id"] == "42"
     assert payload["job_id"] == "x"
+
+
+def test_cmd_club_schedule_rejects_missing_channel(r, knowledge):
+    """discord.Interaction.channel_id is Optional. Scheduling with None used
+    to stringify to "None", report success, and then never deliver."""
+    reply = club.cmd_club_schedule(
+        r,
+        knowledge,
+        film="Inception",
+        when_iso="2099-01-01T19:00:00",
+        channel_id=None,
+        organizer="Solomon Smith",
+    )
+    assert "can't schedule" in reply
+    assert "job" not in reply
+    assert not [k for k in r.keys("cron:job:watch_party_*")]

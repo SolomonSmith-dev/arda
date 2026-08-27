@@ -288,14 +288,14 @@ async def get_response(
         and viewer.tier is Tier.STRANGER
         and not history
     ):
-        reply = _stranger_onboarding_reply(viewer)
+        onboarding_reply = _stranger_onboarding_reply(viewer)
         log.info("stranger_onboarding_reply", scope=scope_key, viewer=viewer.discord_name)
         try:
             memory.append_turn(redis_client, scope_key, viewer, "user", text)
-            memory.append_turn(redis_client, scope_key, viewer, "assistant", reply)
+            memory.append_turn(redis_client, scope_key, viewer, "assistant", onboarding_reply)
         except Exception as e:
             log.warning("memory_append_failed", scope=scope_key, exc=str(e))
-        return reply
+        return onboarding_reply
 
     system_prompt = _build_system_prompt(viewer, prefs, recalled)
     messages: list[dict[str, Any]] = [

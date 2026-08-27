@@ -196,7 +196,7 @@ def cmd_club_schedule(
     *,
     film: str,
     when_iso: str,
-    channel_id: str | int,
+    channel_id: str | int | None,
     organizer: str,
 ) -> str:
     """Helper for ``/club schedule``: validates inputs and registers the
@@ -207,6 +207,12 @@ def cmd_club_schedule(
     when_iso = (when_iso or "").strip()
     if not film:
         return "Film is required."
+    # discord.Interaction.channel_id is Optional. Without this guard the
+    # str() below turns None into the literal "None", the job registers
+    # with delivery.to="None", the user is told it was scheduled, and the
+    # reminder silently never delivers.
+    if channel_id is None:
+        return "I can't schedule a watch party here -- run this in a channel."
     try:
         datetime.fromisoformat(when_iso)
     except ValueError:
