@@ -104,10 +104,23 @@ and CI. **`scripts/verify-d4-d5.sh` does not exist on that branch**, so D4
 and D5 cannot be verified until the host is on `main`. See AGENTS.md
 "Deploy host reality".
 
+On a host that already has the script:
+
 ```bash
 ssh solomon@100.112.3.116          # /usr/bin/ssh; expect a Tailscale browser check
 cd /home/solomon/Code/arda-stack/arda
+./scripts/reconcile-deploy-host.sh --dry-run   # read the plan first
 ./scripts/reconcile-deploy-host.sh
+```
+
+**On a host's FIRST reconcile the script is not there yet** -- it ships in the
+very commits being deployed. Copying it into the checkout does not help: it
+would be an untracked file, and git refuses a checkout that would overwrite
+one. Pipe it in and name the repo instead:
+
+```bash
+cat scripts/reconcile-deploy-host.sh \
+  | ssh solomon@100.112.3.116 'bash -s -- --repo /home/solomon/Code/arda-stack/arda --dry-run'
 ```
 
 The script backs up the current HEAD to a `prod-backup-<timestamp>` branch,

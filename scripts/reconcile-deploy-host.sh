@@ -9,6 +9,15 @@
 # backup, a preflight, and a rollback path rather than a hand-typed sequence.
 #
 # Run ON the deploy host, from the repo root:
+# On a host that does not have this script yet -- which is every host on its
+# FIRST reconcile, since the script ships in the commits being deployed -- pipe
+# it in and name the repo explicitly:
+#
+#     cat scripts/reconcile-deploy-host.sh | ssh HOST 'bash -s -- --repo /path/to/repo --dry-run'
+#
+# Placing it inside the repo instead does not work for a first run: it would be
+# an untracked file, and git refuses a checkout that would overwrite one.
+#
 #     ./scripts/reconcile-deploy-host.sh --dry-run  # narrate the plan, change nothing
 #     ./scripts/reconcile-deploy-host.sh            # prompts before changing anything
 #     ./scripts/reconcile-deploy-host.sh --yes      # non-interactive
@@ -26,13 +35,17 @@ TARGET_REF="main"
 API_URL="http://localhost:5000"
 ASSUME_YES=0
 DRY_RUN=0
-for arg in "$@"; do
-  case "$arg" in
-    --yes|-y)    ASSUME_YES=1 ;;
+REPO_DIR=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes|-y)     ASSUME_YES=1 ;;
     --dry-run|-n) DRY_RUN=1 ;;
-    -h|--help)   sed -n '2,20p' "$0"; exit 0 ;;
-    *)           printf 'unknown argument: %s (try --help)\n' "$arg" >&2; exit 2 ;;
+    --repo)       REPO_DIR="${2:-}"; shift ;;
+    --repo=*)     REPO_DIR="${1#*=}" ;;
+    -h|--help)    sed -n '2,28p' "$0" 2>/dev/null || echo "see script header"; exit 0 ;;
+    *)            printf 'unknown argument: %s (try --help)\n' "$1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 step() { printf '\n=== %s ===\n' "$*"; }
@@ -59,7 +72,17 @@ confirm() {
   [[ "$reply" == "y" || "$reply" == "Y" ]]
 }
 
-cd "$(dirname "$0")/.."
+# Resolve the repo. "$(dirname "$0")/.." only works when the script is running
+# from inside the checkout; piped through `bash -s` it resolves to "." or "/".
+if [[ -z "$REPO_DIR" ]]; then
+  script_dir="$(cd "$(dirname "$0")" 2>/dev/null && pwd || true)"
+  if [[ -n "$script_dir" && -d "$script_dir/../.git" ]]; then
+    REPO_DIR="$script_dir/.."
+  else
+    REPO_DIR="$PWD"
+  fi
+fi
+cd "$REPO_DIR" || { printf 'FAIL  cannot cd to %s\n' "$REPO_DIR" >&2; exit 1; }
 
 # --- 1. Preflight -----------------------------------------------------------
 step "Preflight"
