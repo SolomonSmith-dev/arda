@@ -22,6 +22,10 @@ log = get_logger("agents.tombombadil.agent")
 
 MAX_REPLY_TOKENS = 1024
 LLM_TIMEOUT_SECONDS = 30
+# Tom is a chat persona, but he quotes recorded film ratings verbatim. High
+# temperature makes him embellish them (9/10 becomes 10/10). Keep sampling
+# tight; the personality comes from the system prompt, not from sampling.
+CHAT_TEMPERATURE = 0.2
 
 # Pre-V6 / imitation leaks: assistant text starting with ``[Name] `` or
 # ``[@Name] ``. Negative lookahead skips ``[mock...]`` (dev mock replies).
@@ -88,6 +92,65 @@ def _club_roster_block() -> str | None:
     return "\n".join(lines)
 
 
+_LETTERBOXD_PREAMBLE = (
+    "FILM RATINGS LOOKUP -- STRICT RULES:\n"
+    "1. The list below is the ONLY source of truth for the viewer's ratings. "
+    "Every rated film is in it.\n"
+    "2. When asked about a specific film, find it and quote the rating EXACTLY "
+    "(e.g. '9/10', not '10/10').\n"
+    "3. If a film is NOT in the list, say 'I don't see it in your ratings'. "
+    "Do NOT guess, do NOT invent a score.\n"
+    "4. When asked for 'top N' or 'highest rated', use the Top-rated line "
+    "verbatim. Do NOT pad the list with films that aren't there.\n"
+    "5. Watch dates are NOT in this data. Say so if asked.\n"
+    "6. Never claim to be 'checking Letterboxd live' -- you have a snapshot.\n\n"
+)
+
+
+def _verified_film_facts(text: str, viewer_name: str) -> str | None:
+    """Pre-resolve ratings for every known title named in ``text``.
+
+    Tom confabulates ratings even with the full list in context: the
+    summary is a ~7K-token haystack and attention over it is unreliable.
+    Doing the lookup deterministically here and handing the model a short
+    block for the *current* query leaves it nothing to guess at.
+
+    Returns None when the message names no known film, so the block is
+    only spent when it is load-bearing.
+    """
+    text_lower = text.lower()
+    facts: list[str] = []
+    seen: set[str] = set()
+    for film in _film_knowledge.films:
+        title = (film.get("title") or "").strip()
+        if not title or title.lower() in seen:
+            continue
+        # Films are stored under the full "Title: Subtitle" name, but people
+        # say the short form ("Ghost Dog"). Match either.
+        candidates = {title.lower(), title.split(":", 1)[0].strip().lower()}
+        if not any(c and re.search(rf"\b{re.escape(c)}\b", text_lower) for c in candidates):
+            continue
+        seen.add(title.lower())
+        watcher = next(
+            (w for w in film.get("watchers", []) if w.get("name") == viewer_name),
+            None,
+        )
+        if watcher is None:
+            facts.append(f"- {title}: {viewer_name} has NOT rated this")
+        elif watcher.get("rating") is None:
+            facts.append(f"- {title}: {viewer_name} watched but did not rate")
+        else:
+            facts.append(
+                f"- {title}: {viewer_name} rated this {float(watcher['rating']):g}/10"
+            )
+    if not facts:
+        return None
+    return (
+        "VERIFIED RATINGS FOR THIS QUERY -- use these EXACTLY, do NOT round, "
+        "do NOT contradict:\n" + "\n".join(facts)
+    )
+
+
 def _film_summary_block(viewer: Viewer, prefs: dict[str, str]) -> str | None:
     if _suppress_films(prefs):
         metrics.PREF_SUPPRESSED.inc()
@@ -107,11 +170,7 @@ def _film_summary_block(viewer: Viewer, prefs: dict[str, str]) -> str | None:
             f"{viewer.canonical_name} is a recognised club member but has no "
             "recorded ratings yet. Ask, don't fabricate."
         )
-    return (
-        "You have access to the user's film history. Use it when asked about "
-        "ratings, favorites, or recommendations. Never invent ratings — if a "
-        f"film isn't listed, say so.\n\n{summary}"
-    )
+    return f"{_LETTERBOXD_PREAMBLE}{summary}"
 
 
 def _prefs_block(prefs: dict[str, str]) -> str | None:
@@ -142,6 +201,7 @@ def _build_system_prompt(
     viewer: Viewer,
     prefs: dict[str, str],
     recalled_facts: list[str],
+    text: str = "",
 ) -> str:
     """Concatenate every system-level instruction into a single string
     for Anthropic's top-level ``system`` parameter. Blocks are joined
@@ -158,6 +218,10 @@ def _build_system_prompt(
     film_block = _film_summary_block(viewer, prefs)
     if film_block:
         blocks.append(film_block)
+    if text and not _suppress_films(prefs) and viewer.canonical_name:
+        verified = _verified_film_facts(text, viewer.canonical_name)
+        if verified:
+            blocks.append(verified)
     prefs_block = _prefs_block(prefs)
     if prefs_block:
         blocks.append(prefs_block)
@@ -297,7 +361,7 @@ async def get_response(
             log.warning("memory_append_failed", scope=scope_key, exc=str(e))
         return reply
 
-    system_prompt = _build_system_prompt(viewer, prefs, recalled)
+    system_prompt = _build_system_prompt(viewer, prefs, recalled, text)
     messages: list[dict[str, Any]] = [
         *_history_messages(history),
         {"role": "user", "content": text},
@@ -319,6 +383,7 @@ async def get_response(
                     system=system_prompt,
                     messages=messages,
                     max_tokens=MAX_REPLY_TOKENS,
+                    temperature=CHAT_TEMPERATURE,
                 ),
                 timeout=LLM_TIMEOUT_SECONDS,
             )
