@@ -66,7 +66,6 @@ step "Preflight"
 
 command -v docker >/dev/null 2>&1 || die "docker not found"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 not available"
-docker ps >/dev/null 2>&1 || die "docker daemon is not reachable; start it before reconciling"
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository: $PWD"
 ok "docker + git present in $PWD"
 
@@ -78,6 +77,59 @@ if grep -qE '^ARDA_API_KEY=.+' .env; then
   ok ".env defines a non-empty ARDA_API_KEY"
 else
   die ".env has no non-empty ARDA_API_KEY. The API will crash at import without it."
+fi
+
+# The .env on a long-lived host can predate the code being deployed. This
+# host's was written before the Anthropic pivot: it still set gemini /
+# llama model overrides and stored the key as CLAUDE_API_KEY, which
+# core/config.py does not read. Deploying main over that yields a bot
+# running on MockAnthropicClient, or 404s once the key name is fixed --
+# in both cases silently, because nothing crashes. Check before switching.
+# Must always succeed: `x="$(env_val KEY)"` propagates the substitution's
+# status, so a grep miss on an absent key would trip `set -e` and kill the
+# script mid-preflight without printing anything.
+env_val() { grep -E "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2- || true; }
+
+if [[ "$(env_val USE_MOCK_LLM)" == "false" ]]; then
+  if [[ -n "$(env_val ANTHROPIC_API_KEY)" ]]; then
+    ok ".env has ANTHROPIC_API_KEY and USE_MOCK_LLM=false"
+  else
+    warn "USE_MOCK_LLM=false but ANTHROPIC_API_KEY is unset or empty."
+    if [[ -n "$(env_val CLAUDE_API_KEY)" ]]; then
+      warn "  A CLAUDE_API_KEY is present. core/config.py reads ANTHROPIC_API_KEY;"
+      warn "  rename it or the agents fall back to the mock client in production."
+    fi
+    die "fix the LLM key before deploying, or set USE_MOCK_LLM=true deliberately"
+  fi
+fi
+
+# Anthropic is the sole provider after ADR 0006. A model override naming a
+# retired provider is sent verbatim to the Anthropic API and 404s.
+for var in ORCHESTRATOR_MODEL RETRIEVER_MODEL SPECIALIST_MODEL EXECUTOR_MODEL; do
+  val="$(env_val "$var")"
+  [[ -z "$val" ]] && continue
+  if [[ "$val" == *gemini* || "$val" == *llama* || "$val" == *gpt* || "$val" == *mixtral* ]]; then
+    warn "${var}=${val} names a retired provider (ADR 0006: Anthropic only)."
+    warn "  Remove the override so the code default applies, or set a claude-* id."
+    STALE_MODELS=1
+  fi
+done
+if [[ "${STALE_MODELS:-0}" -eq 1 ]]; then
+  die "stale model overrides in .env would 404 against the Anthropic API"
+fi
+ok "no stale model overrides in .env"
+
+# The export CSVs are mounted read-only by compose, but nothing reads them
+# unless LETTERBOXD_EXPORT_DIR points at the in-container path. Without it
+# Tom answers from the small seed catalogue and reports no ratings.
+if [[ -d data/letterboxd ]] && compgen -G "data/letterboxd/*.csv" >/dev/null; then
+  if [[ -n "$(env_val LETTERBOXD_EXPORT_DIR)" ]]; then
+    ok ".env points LETTERBOXD_EXPORT_DIR at the mounted export"
+  else
+    warn "data/letterboxd holds CSVs but LETTERBOXD_EXPORT_DIR is unset, so the"
+    warn "  merge never runs and Tom sees only the seed catalogue. Suggested:"
+    warn "  LETTERBOXD_EXPORT_DIR=/app/data/letterboxd"
+  fi
 fi
 
 CURRENT_REF="$(git rev-parse --abbrev-ref HEAD)"
@@ -93,6 +145,8 @@ fi
 # profiles, which is empty by default. Read the live container list instead so
 # the rebuild does not silently drop galadriel/tombombadil/gwaihir.
 step "Detecting active compose profiles"
+
+docker ps >/dev/null 2>&1 || die "docker daemon is not reachable; start it before reconciling"
 
 RUNNING="$(docker ps --format '{{.Names}}')"
 PROFILE_ARGS=()
