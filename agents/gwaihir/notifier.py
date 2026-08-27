@@ -44,8 +44,10 @@ def send_message(
     payload = {"chat_id": chat_id, "text": text}
     url = _api_url(bot_token, "sendMessage")
 
+    # Narrow on `client` itself rather than a boolean flag, so the type
+    # checker can see that `client` is non-None from here down.
     owns_client = client is None
-    if owns_client:
+    if client is None:
         client = httpx.Client(timeout=SEND_TIMEOUT_SECONDS)
     try:
         resp = client.post(url, json=payload)

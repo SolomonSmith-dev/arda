@@ -21,6 +21,7 @@ from agents.galadriel.models import Job, JobDelivery, JobPayload, JobSchedule
 from agents.galadriel.scheduler import Schedule, next_run_ms
 from agents.galadriel.store import save_job
 from agents.tombombadil.film_knowledge import FilmKnowledge
+from agents.tombombadil.film_types import Film
 from core.logging import get_logger
 
 log = get_logger("agents.tombombadil.club")
@@ -73,7 +74,7 @@ def recommend_for_group(
     fallback = "union" if not shared else "intersection"
     target_themes = shared if shared else set().union(*theme_sets)
 
-    best: dict | None = None
+    best: Film | None = None
     best_overlap = 0
     for film in knowledge.films:
         if film["title"] in watched_union:
@@ -90,7 +91,10 @@ def recommend_for_group(
         )
 
     names = ", ".join(n for n, _, _ in profiles)
-    themes = ", ".join(sorted(set(best.get("themes", []))[:4]))
+    # The slice belongs outside sorted(), not inside set(): a set is not
+    # subscriptable, so the old form raised TypeError whenever this
+    # fallback actually fired.
+    themes = ", ".join(sorted(set(best.get("themes", [])))[:4])
     lines = [
         f"**For {names}** (blend strategy: {fallback}):",
         f"Try **{best['title']}** ({best.get('year', 'n.d.')}).",

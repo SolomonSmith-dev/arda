@@ -5,6 +5,7 @@ import time
 from typing import Any, ClassVar
 
 from agents.base import BaseAgent
+from core.config import Tier
 from core.logging import get_logger
 from core.models import AgentResult, AgentTask, TaskStatus
 from core.redis_client import (
@@ -119,7 +120,7 @@ class Earendil(BaseAgent):
     results land or `WAIT_TIMEOUT_SECONDS` elapses.
     """
 
-    tier: ClassVar[str] = "executor"
+    tier: ClassVar[Tier] = "executor"
     name: ClassVar[str] = "earendil"
 
     async def run(self, task: AgentTask) -> AgentResult:

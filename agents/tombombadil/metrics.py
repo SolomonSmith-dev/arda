@@ -13,7 +13,7 @@ try:
     from prometheus_client import Counter
     _PROM_AVAILABLE = True
 except ImportError:  # pragma: no cover -- slim install path
-    Counter = None  # type: ignore[assignment]
+    Counter = None  # type: ignore[misc,assignment]
     _PROM_AVAILABLE = False
 
 

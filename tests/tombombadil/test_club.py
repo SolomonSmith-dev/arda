@@ -186,3 +186,37 @@ def test_cmd_club_schedule_rejects_missing_channel(r, knowledge):
     assert "can't schedule" in reply
     assert "job" not in reply
     assert not [k for k in r.keys("cron:job:watch_party_*")]
+
+
+def test_recommend_for_group_renders_themes_without_crashing():
+    """Regression: the themes line did ``sorted(set(...)[:4])``, slicing a
+    set. Any call that actually reached a recommendation raised
+    ``TypeError: 'set' object is not subscriptable``.
+
+    The existing happy-path test accepts an "already watched" fallback, so
+    it never reached this line. This one forces the recommend branch.
+    """
+    fk = club.FilmKnowledge()
+    fk.films = [
+        {
+            "title": "Unwatched Epic",
+            "year": 1985,
+            "themes": ["power", "fate", "violence", "greed", "loyalty"],
+            "watchers": [],
+        }
+    ]
+    fk.people = {
+        "Alice": {
+            "avg_rating": 8.0,
+            "preferred_themes": ["power", "fate", "violence"],
+            "films_watched": ["Something Else"],
+        }
+    }
+
+    reply = club.recommend_for_group(fk, ["Alice"])
+
+    assert "Unwatched Epic" in reply
+    # The film's own themes, deduped, alphabetised, first four -- which is
+    # what the misplaced slice was meant to produce.
+    assert "fate, greed, loyalty, power" in reply
+    assert "violence" not in reply  # 5th alphabetically, correctly dropped
