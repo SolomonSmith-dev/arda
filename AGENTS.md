@@ -42,11 +42,36 @@ worker + Redis) is already provisioned on the VM. The startup update script runs
 - Core product works mock-by-default: Sauron / Earendil / Finrod / Tom / Galadriel / Gwaihir.
 - `ARDA_SCOPE.md` is **historical** — trust README, CLAUDE.md, ADRs, and this file.
 
+### Deploy host reality (verified 2026-08-02)
+
+**The deploy host does not run `main`.** `home-server` (`100.112.3.116`,
+`/home/solomon/Code/arda-stack/arda`) is checked out on
+`claude/pr-6-hardening`, **34 commits behind `main` and 6 ahead**. Containers
+have been up ~2 months. Until that is reconciled, treat any statement in this
+file about what is "live" as describing `main`, not production.
+
+Consequences for the operator items below:
+
+- The `cron` profile is **already up** — `galadriel` has been running for two
+  months, so `docker compose --profile cron up -d` is a no-op that exits 0 and
+  proves nothing.
+- D4's verification criterion (cron job seeded by the API lifespan) and
+  `scripts/verify-d4-d5.sh` both live in the 34 commits prod does not have.
+  **D4/D5 cannot be closed without first deploying `main`.**
+- The 6 prod-only commits are backed up to `origin/claude/pr-6-hardening`
+  (pushed 2026-08-02; the remote branch did not previously exist). Most are
+  superseded by `main`; see that branch before assuming a deploy is lossless.
+- The deploy host has **no GitHub credentials** — it cannot push. Relay
+  through a workstation with `git fetch ssh://solomon@100.112.3.116/...`.
+- Reaching the host needs Tailscale up **and** an interactive Tailscale SSH
+  browser check. Use `/usr/bin/ssh`; Homebrew's `ssh` rejects `UseKeychain`.
+
 ### Remaining work (operator-only)
 
 | Priority | Item | Type | Notes |
 |---|---|---|---|
-| 1 | [#21 D4](https://github.com/SolomonSmith-dev/arda/issues/21) Galadriel cron | **Operator** | Deploy host: `docker compose --profile cron up -d`. Runbook + `./scripts/verify-d4-d5.sh` in `docs/cutover.md`. |
+| 0 | Reconcile prod onto `main` | **Operator** | Blocks #21 and #22. See "Deploy host reality" above. |
+| 1 | [#21 D4](https://github.com/SolomonSmith-dev/arda/issues/21) Galadriel cron | **Operator** | Profile already up; needs `main` deployed before `./scripts/verify-d4-d5.sh` exists to verify it. |
 | 2 | [#22 D5](https://github.com/SolomonSmith-dev/arda/issues/22) Milvus | **Operator** | Deploy host: `docker compose --profile milvus up -d` + `[full]` + `USE_MOCK_EMBEDDER=false` + `MILVUS_HOST=milvus`. |
 
 No further code-side Tom audit deltas are open. Cloud VMs without Docker cannot close D4/D5.
@@ -66,4 +91,4 @@ No further code-side Tom audit deltas are open. Cloud VMs without Docker cannot 
 
 ### Suggested first prompt for a successor agent
 
-> On the deploy host, enable and verify D4+D5 (`docker compose --profile cron` / `milvus`, then `./scripts/verify-d4-d5.sh`). Close #21/#22 when checks pass. Do not reopen Groq/Gemini or rename `mcp_server/`.
+> Reconcile the deploy host onto `main` (it runs `claude/pr-6-hardening`, 34 behind / 6 ahead — read "Deploy host reality" first). Only then can D4+D5 be verified with `./scripts/verify-d4-d5.sh` and #21/#22 closed. Do not reopen Groq/Gemini or rename `mcp_server/`.
