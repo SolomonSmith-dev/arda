@@ -27,12 +27,14 @@ def build_llm() -> Any:
 
     from llama_index.llms.anthropic import Anthropic
 
-    # No temperature. LlamaIndex does NOT translate this away -- it forwards
-    # it verbatim to AsyncMessages.create, which the anthropic SDK 1.x
-    # rejects. In production that surfaced as every /memory/query returning
-    # "Empty Response" while retrieval worked fine, because LlamaIndex logs
-    # the TypeError as a "Structured response error" and returns an empty
-    # synthesis rather than raising. Same root cause as the Tom outage (#83).
+    # No explicit temperature: LlamaIndex's own default (0.1) is already
+    # tighter than the 0.2 that used to be set here, and passing it added
+    # nothing.
+    #
+    # Note that removing it does NOT make this safe on anthropic 1.x.
+    # Anthropic.__init__ declares `temperature: float = 0.1` and forwards it
+    # unconditionally, so the caller cannot suppress it -- which is why
+    # pyproject pins anthropic<1. See the comment there.
     return Anthropic(
         model=settings.retriever_model,
         api_key=settings.anthropic_api_key,
