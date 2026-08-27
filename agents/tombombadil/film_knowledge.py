@@ -25,6 +25,19 @@ from core.logging import get_logger
 
 log = get_logger("agents.tombombadil.film_knowledge")
 
+# Canonical name the seed catalogue files the owner's ratings under. Used
+# when LETTERBOXD_VIEWER_NAME is unset, so the merge still lands under the
+# name identity.py resolves the owner to -- it hardcodes the same string as
+# its own final fallback (see ``resolve_viewer``). Without this the export
+# merges under the raw Letterboxd username, ``_resolve_person_key`` finds no
+# match for the Discord name, and Tom reports zero ratings for a viewer who
+# has hundreds.
+#
+# film_knowledge cannot import identity to read ``owner_name`` from the YAML:
+# identity imports FILM_DATABASE from here, so that would be circular. Pass
+# ``viewer_name=`` explicitly to override per instance.
+DEFAULT_VIEWER_NAME = "Solomon Smith"
+
 FILM_DATABASE: FilmDatabase = {
     "films": [
         {
@@ -109,7 +122,12 @@ FILM_DATABASE: FilmDatabase = {
 
 
 class FilmKnowledge:
-    def __init__(self, redis_client=None, letterboxd_dir: Path | str | None = None):
+    def __init__(
+        self,
+        redis_client=None,
+        letterboxd_dir: Path | str | None = None,
+        viewer_name: str | None = None,
+    ):
         self.redis = redis_client
 
         if letterboxd_dir is None:
@@ -122,8 +140,12 @@ class FilmKnowledge:
             path = Path(letterboxd_dir)
             if path.is_dir():
                 try:
-                    viewer_name = os.environ.get("LETTERBOXD_VIEWER_NAME") or None
-                    export = load_letterboxd_export(path, viewer_name=viewer_name)
+                    resolved_viewer = (
+                        viewer_name
+                        or os.environ.get("LETTERBOXD_VIEWER_NAME")
+                        or DEFAULT_VIEWER_NAME
+                    )
+                    export = load_letterboxd_export(path, viewer_name=resolved_viewer)
                     merged = merge_into_film_database(FILM_DATABASE, export)
                     log.info(
                         "letterboxd_merged",
