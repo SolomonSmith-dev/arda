@@ -19,11 +19,20 @@ COPY api ./api
 COPY mcp_server ./mcp_server
 COPY docs ./docs
 
+# Which optional extras to bake in. Default is slim -- Finrod falls back to
+# MockEmbedding and the image stays ~400MB. Build with
+#   docker compose build --build-arg ARDA_EXTRAS=embeddings
+# (or set ARDA_EXTRAS in .env, which compose passes through) to add
+# sentence-transformers + torch (~1GB) for real semantic embeddings.
+# `full` additionally pulls pymilvus, which needs a Milvus server to be
+# useful and an SSE4.2-capable CPU to run against.
+ARG ARDA_EXTRAS=""
 RUN pip install --upgrade pip \
- && pip install -e .
-# `[full]` extra adds sentence-transformers + torch (~1GB) for real
-# semantic embeddings. Skipped here so the default image stays slim;
-# Finrod uses MockEmbedder when USE_MOCK_EMBEDDER is unset.
+ && if [ -n "$ARDA_EXTRAS" ]; then \
+        pip install -e ".[$ARDA_EXTRAS]"; \
+    else \
+        pip install -e .; \
+    fi
 
 EXPOSE 5000
 
