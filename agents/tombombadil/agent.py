@@ -29,7 +29,16 @@ CHAT_TEMPERATURE = 0.2
 
 # Pre-V6 / imitation leaks: assistant text starting with ``[Name] `` or
 # ``[@Name] ``. Negative lookahead skips ``[mock...]`` (dev mock replies).
-_SPEAKER_PREFIX_RE = re.compile(r"^\[@?(?!mock\b)[^\]]{1,64}\]\s+")
+#
+# Two forms, deliberately not one. ``[@Name] `` is mention-shaped and is
+# never legitimate reply content, so any name is stripped. A bare
+# ``[Name] `` is ambiguous: "[Spoilers] The ending..." is an entirely
+# plausible reply from a film-club bot, as are "[1] See above" and a
+# markdown "[ ] pick a film". So the bare form is only stripped when the
+# bracketed token is a speaker the model could actually be imitating.
+# Neither pattern crosses a newline.
+_MENTION_PREFIX_RE = re.compile(r"^\[@(?!mock\b)([^\]\n]{1,64})\]\s+")
+_BRACKET_PREFIX_RE = re.compile(r"^\[(?!mock\b)([^\]\n]{1,64})\]\s+")
 
 
 _llm = build_chat_client()
@@ -229,6 +238,21 @@ def _build_system_prompt(
     return "\n\n".join(blocks)
 
 
+def _known_speaker_names() -> set[str]:
+    """Names the model could plausibly be imitating in a leaked prefix.
+
+    ``_history_messages`` injects user turns as ``f"[{viewer}] {content}"``,
+    so the only names that can leak back out are viewers Tom has seen:
+    the identity config's owner and regulars, plus the film database's club
+    members. ``all_known`` already unions exactly those.
+    """
+    names = {n.strip().lower() for n in all_known() if n and n.strip()}
+    # Tom's own name, plus the literal "viewer" placeholder that leaked from
+    # pre-V6 history rows (see commit 2de387c, "legacy [viewer] prefixes").
+    names.update({"tom", "tom bombadil", "viewer"})
+    return names
+
+
 def _strip_leaked_speaker_prefix(content: str) -> str:
     """Remove a leading ``[Name] `` / ``[@Name] `` tag from assistant text (D1 / V6).
 
@@ -239,9 +263,15 @@ def _strip_leaked_speaker_prefix(content: str) -> str:
     if not content:
         return content
     cleaned = content
+    known = _known_speaker_names()
     # Strip at most a couple of stacked prefixes (pathological history).
     for _ in range(3):
-        nxt = _SPEAKER_PREFIX_RE.sub("", cleaned, count=1)
+        match = _MENTION_PREFIX_RE.match(cleaned)
+        if match is None:
+            match = _BRACKET_PREFIX_RE.match(cleaned)
+            if match is None or match.group(1).strip().lower() not in known:
+                break
+        nxt = cleaned[match.end():]
         if nxt == cleaned:
             break
         cleaned = nxt
@@ -266,7 +296,14 @@ def _history_messages(turns: list[memory.Turn]) -> list[dict[str, Any]]:
             content = f"[{t.viewer}] {t.content}" if t.viewer else t.content
             msgs.append({"role": "user", "content": content})
         else:
-            msgs.append({"role": "assistant", "content": _strip_leaked_speaker_prefix(t.content)})
+            stripped = _strip_leaked_speaker_prefix(t.content)
+            # A pre-V6 row that was *only* a prefix strips to "". Anthropic
+            # rejects an empty content block with a 400, so appending it here
+            # would hard-fail every turn in this scope until the TTL expires.
+            # Drop the turn instead; it carried no content to begin with.
+            if not stripped.strip():
+                continue
+            msgs.append({"role": "assistant", "content": stripped})
     return msgs
 
 
@@ -426,7 +463,15 @@ async def get_response(
         return "Error processing your request"
 
     # V6 / D1: never persist or surface a leaked speaker prefix.
-    reply = _strip_leaked_speaker_prefix(reply)
+    stripped_reply = _strip_leaked_speaker_prefix(reply)
+    if not stripped_reply.strip():
+        # The model emitted nothing but a prefix. "" would be silently
+        # dropped by memory.append_turn and rejected by Discord with
+        # "Cannot send an empty message", so use the same fallback the
+        # empty-response path already uses.
+        log.warning("reply_was_prefix_only", scope=scope_key, raw_preview=reply[:40])
+        stripped_reply = "No response generated"
+    reply = stripped_reply
 
     try:
         memory.append_turn(redis_client, scope_key, viewer, "user", text)
