@@ -103,3 +103,23 @@ extend-exclude = ["earendil", "tombombadil", "earendil-mcp"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM"]
 ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+
+# Third-party packages that ship no type information. Not our debt and not
+# fixable here: feedparser, croniter and PyYAML have no py.typed marker, and
+# pymilvus / the llama-index Milvus + HuggingFace integrations live behind the
+# [full] extra, so they are absent from the slim default install by design
+# (CLAUDE.md documents the pymilvus note as expected). Silencing them keeps
+# `mypy agents core` output to real findings in our own code.
+[[tool.mypy.overrides]]
+module = [
+    "croniter.*",
+    "feedparser.*",
+    "llama_index.embeddings.huggingface.*",
+    "llama_index.vector_stores.milvus.*",
+    "pymilvus.*",
+    "yaml.*",
+]
+ignore_missing_imports = true
