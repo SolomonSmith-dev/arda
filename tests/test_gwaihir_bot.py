@@ -163,7 +163,9 @@ def test_handle_update_allowlisted_chat_forwards_to_api(monkeypatch):
 
     assert captured["path"] == "/execute/wait"
     assert "whoami" in captured["body"]
-    assert '"42"' in sent["body"] or '42' in sent["body"]
+    # '"42"' in body implies '42' in body, so the old `or` reduced to the
+    # weaker half. Assert the chat id reaches the payload, once.
+    assert "42" in sent["body"]
     assert "ok" in sent["body"]
 
 

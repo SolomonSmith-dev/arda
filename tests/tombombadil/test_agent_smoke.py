@@ -84,9 +84,20 @@ async def test_stranger_prompt_excludes_solomon_film_summary(fake_redis):
         await tom_agent.get_response("tom:hist:ch:1", "Hi", STRANGER, fake_redis)
 
     system_text = captured["system"]
-    assert "Solomon Smith" not in system_text or "no film history yet" in system_text.lower()
-    # Stranger fallback line must be present
+    # The stranger fallback line must be present...
     assert "no film history yet" in system_text.lower()
+    # ...and no rating data may leak into a stranger's prompt. The old guard
+    # here read:
+    #     assert "Solomon Smith" not in system_text or "no film history yet" in ...
+    # whose right-hand side is asserted unconditionally on the line above, so
+    # it could never fail no matter what leaked.
+    #
+    # It cannot simply assert the owner's name is absent either: the club
+    # roster block deliberately names every member so Tom attributes opinions
+    # to the right speaker. What must not appear is the rating index.
+    assert "/10" not in system_text
+    assert "All rated films" not in system_text
+    assert "Highest-rated" not in system_text
 
 
 @pytest.mark.asyncio
@@ -194,3 +205,21 @@ async def test_rating_phrase_queues_note_draft_instead_of_saving(fake_redis):
     assert pending.film.lower().startswith("inception")
     assert pending.rating == 9.0
     assert pending.viewer == "Solomon Smith"
+
+
+@pytest.mark.asyncio
+async def test_owner_prompt_does_include_the_rating_index(fake_redis):
+    """Positive control for test_stranger_prompt_excludes_solomon_film_summary.
+
+    That test asserts the rating index is absent for a stranger. Without
+    this one, those assertions would still pass if the index stopped being
+    generated for anybody -- which is exactly how the previous, vacuous
+    guard survived.
+    """
+    captured: dict = {}
+    with patch.object(tom_agent._llm.messages, "create", side_effect=_capture_create(captured)):
+        await tom_agent.get_response("tom:hist:ch:9", "what did I rate Ran", SOLOMON, fake_redis)
+
+    system_text = captured["system"]
+    assert "/10" in system_text
+    assert "Highest-rated" in system_text
