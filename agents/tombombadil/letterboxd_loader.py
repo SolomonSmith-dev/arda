@@ -295,8 +295,17 @@ def merge_into_film_database(
     New / theme-less films are enriched via :func:`infer_themes` so they
     participate in recommendation ranking (D3).
     """
-    films: list[Film] = [f.copy() for f in base.get("films", [])]
-    people: dict[str, Person] = dict(base.get("people", {}))
+    # Deep-copy through the watcher dicts. ``f.copy()`` and ``list(...)`` are
+    # both shallow, so the per-watcher writes further down would otherwise
+    # land on the objects owned by ``base`` -- which is the module-level
+    # FILM_DATABASE singleton, mutating it for every other reader in the
+    # process despite this function promising to return a new database.
+    films: list[Film] = []
+    for f in base.get("films", []):
+        copied: Film = f.copy()
+        copied["watchers"] = [w.copy() for w in f.get("watchers", [])]
+        films.append(copied)
+    people: dict[str, Person] = {n: p.copy() for n, p in base.get("people", {}).items()}
 
     by_key: dict[str, Film] = {}
     for f in films:
@@ -347,7 +356,12 @@ def merge_into_film_database(
             # (``name`` is skipped because ``already`` was matched on it.)
             if entry.rating is not None:
                 already["rating"] = entry.rating
-            if inferred:
+            # infer_themes never returns empty: it falls back to ["cinema"]
+            # (line ~104), so a bare `if inferred:` is always true and would
+            # replace a curated ["violence", "power", "fate"] with ["cinema"]
+            # on any ratings-only import. Only overwrite when the export
+            # actually carried signal.
+            if inferred and inferred != ["cinema"]:
                 already["themes"] = inferred
             if entry.review:
                 already["take"] = entry.review
