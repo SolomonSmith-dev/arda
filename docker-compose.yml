@@ -4,8 +4,10 @@ services:
     # Host already runs redis-server on 6379 (legacy Earendil queue).
     # Publish the new compose-internal Redis on 6380 to avoid collision.
     # API + worker still talk to it as redis:6379 over the compose network.
+    # Bound to loopback: the published port is for host-side debugging only,
+    # so it must not be reachable from the LAN. Redis has no auth configured.
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
