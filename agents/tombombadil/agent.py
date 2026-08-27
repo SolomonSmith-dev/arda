@@ -22,10 +22,18 @@ log = get_logger("agents.tombombadil.agent")
 
 MAX_REPLY_TOKENS = 1024
 LLM_TIMEOUT_SECONDS = 30
-# Tom is a chat persona, but he quotes recorded film ratings verbatim. High
-# temperature makes him embellish them (9/10 becomes 10/10). Keep sampling
-# tight; the personality comes from the system prompt, not from sampling.
-CHAT_TEMPERATURE = 0.2
+# NOTE: there is deliberately no temperature setting here. #54 added
+# ``temperature=0.2`` to stop Tom embellishing recorded ratings, but the
+# anthropic SDK removed that parameter from Messages.create in 1.x --
+# passing it raises
+#   TypeError: AsyncMessages.create() got an unexpected keyword argument
+# on every call, which took Tom down in production until this was reverted.
+# The tests did not catch it because the chat mock accepted **kwargs.
+#
+# Losing the knob costs little: the load-bearing half of #54 was
+# ``_verified_film_facts``, which resolves ratings deterministically in
+# Python and hands the model a short block for the current query, so there
+# is nothing left for sampling to embellish.
 
 # Pre-V6 / imitation leaks: assistant text starting with ``[Name] `` or
 # ``[@Name] ``. Negative lookahead skips ``[mock...]`` (dev mock replies).
@@ -421,7 +429,6 @@ async def get_response(
                     system=system_prompt,
                     messages=messages,
                     max_tokens=MAX_REPLY_TOKENS,
-                    temperature=CHAT_TEMPERATURE,
                 ),
                 timeout=LLM_TIMEOUT_SECONDS,
             )

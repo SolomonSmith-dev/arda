@@ -149,15 +149,28 @@ class _MockChatMessages:
         system: str,
         messages: list[dict],
         max_tokens: int,
-        **kwargs: Any,
+        stop_sequences: list[str] | None = None,
+        timeout: float | None = None,
     ) -> MockMessage:
+        """Deliberately does NOT accept ``**kwargs``.
+
+        It used to, and that is how ``temperature=0.2`` shipped to production
+        and broke every Tom reply: the anthropic SDK dropped ``temperature``
+        from ``Messages.create`` in 1.x, but the mock swallowed it silently,
+        so 400+ tests passed against a call the real client rejects with a
+        TypeError. A mock that accepts more than the real client cannot fail
+        on the mismatch it exists to model. Keep this signature a subset of
+        the real one, and add parameters here only after confirming the
+        installed SDK has them.
+        """
         self._parent.calls.append(
             {
                 "model": model,
                 "system": system,
                 "messages": messages,
                 "max_tokens": max_tokens,
-                "kwargs": kwargs,
+                "stop_sequences": stop_sequences,
+                "timeout": timeout,
             }
         )
         latest = _latest_user(messages)
