@@ -101,8 +101,37 @@ class _MockMessages:
     def __init__(self, parent: MockAnthropicClient):
         self._parent = parent
 
-    async def create(self, *, messages: list[dict], **kwargs) -> MockMessage:
-        self._parent.calls.append({"messages": messages, "kwargs": kwargs})
+    async def create(
+        self,
+        *,
+        model: str,
+        system: str,
+        messages: list[dict],
+        max_tokens: int,
+        tools: list[dict] | None = None,
+        tool_choice: dict | None = None,
+        stop_sequences: list[str] | None = None,
+        timeout: float | None = None,
+    ) -> MockMessage:
+        """Signature is a strict subset of the real ``AsyncMessages.create``.
+
+        This used to be ``create(self, *, messages, **kwargs)``, which named
+        only ``messages`` and swallowed model, system, tools and max_tokens
+        wholesale -- so it could not have caught a misspelled parameter, let
+        alone one the SDK removed. That is exactly how ``temperature=0.2``
+        reached production on the Tom path and broke every reply (the SDK
+        dropped it in 1.x). Add a parameter here only after confirming the
+        installed SDK accepts it.
+        """
+        self._parent.calls.append(
+            {
+                "model": model,
+                "system": system,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "tools": tools,
+            }
+        )
 
         latest = _latest_user(messages)
 
