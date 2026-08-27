@@ -9,8 +9,14 @@
 # backup, a preflight, and a rollback path rather than a hand-typed sequence.
 #
 # Run ON the deploy host, from the repo root:
-#     ./scripts/reconcile-deploy-host.sh          # prompts before changing anything
-#     ./scripts/reconcile-deploy-host.sh --yes    # non-interactive
+#     ./scripts/reconcile-deploy-host.sh --dry-run  # narrate the plan, change nothing
+#     ./scripts/reconcile-deploy-host.sh            # prompts before changing anything
+#     ./scripts/reconcile-deploy-host.sh --yes      # non-interactive
+#
+# --dry-run still runs every read-only check (docker present, .env has a key,
+# which profiles are up, how far behind the host is, which commits would be
+# left behind) and prints each mutating command it would run, prefixed
+# "would:". Nothing is created, checked out, rebuilt, or stashed.
 #
 # Exit 0 = host is on main, stack is up, /health answers.
 set -euo pipefail
@@ -19,14 +25,34 @@ REMOTE_URL="https://github.com/SolomonSmith-dev/arda.git"
 TARGET_REF="main"
 API_URL="http://localhost:5000"
 ASSUME_YES=0
-[[ "${1:-}" == "--yes" || "${1:-}" == "-y" ]] && ASSUME_YES=1
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    --yes|-y)    ASSUME_YES=1 ;;
+    --dry-run|-n) DRY_RUN=1 ;;
+    -h|--help)   sed -n '2,20p' "$0"; exit 0 ;;
+    *)           printf 'unknown argument: %s (try --help)\n' "$arg" >&2; exit 2 ;;
+  esac
+done
 
 step() { printf '\n=== %s ===\n' "$*"; }
 ok()   { printf 'OK    %s\n' "$*"; }
 warn() { printf 'WARN  %s\n' "$*"; }
 die()  { printf 'FAIL  %s\n' "$*" >&2; exit 1; }
 
+# Every state-changing command goes through run(). Under --dry-run it is
+# printed and skipped, so the dry run exercises the same control flow as a
+# real run rather than a separate narration path that can drift from it.
+run() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf 'would: %s\n' "$*"
+    return 0
+  fi
+  "$@"
+}
+
 confirm() {
+  [[ "$DRY_RUN" -eq 1 ]] && { printf 'would ask: %s\n' "$1"; return 0; }
   [[ "$ASSUME_YES" -eq 1 ]] && return 0
   local reply
   read -r -p "$1 [y/N] " reply
@@ -40,6 +66,7 @@ step "Preflight"
 
 command -v docker >/dev/null 2>&1 || die "docker not found"
 docker compose version >/dev/null 2>&1 || die "docker compose v2 not available"
+docker ps >/dev/null 2>&1 || die "docker daemon is not reachable; start it before reconciling"
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository: $PWD"
 ok "docker + git present in $PWD"
 
@@ -67,7 +94,7 @@ fi
 # the rebuild does not silently drop galadriel/tombombadil/gwaihir.
 step "Detecting active compose profiles"
 
-RUNNING="$(docker ps --format '{{.Names}}' || true)"
+RUNNING="$(docker ps --format '{{.Names}}')"
 PROFILE_ARGS=()
 for pair in "galadriel:cron" "tombombadil:discord" "gwaihir:telegram" "milvus:milvus"; do
   svc="${pair%%:*}"; prof="${pair##*:}"
@@ -82,15 +109,15 @@ done
 step "Backup"
 
 BACKUP="prod-backup-$(date +%Y%m%d-%H%M%S)"
-git branch "$BACKUP" >/dev/null
-ok "current HEAD saved as local branch ${BACKUP}"
-echo "      rollback: git checkout ${BACKUP} && docker compose ${PROFILE_ARGS[*]} up -d --build"
+run git branch "$BACKUP"
+[[ "$DRY_RUN" -eq 0 ]] && ok "current HEAD saved as local branch ${BACKUP}"
+echo "      rollback: git checkout ${BACKUP} && docker compose ${PROFILE_ARGS[*]-} up -d --build"
 
 if [[ -n "$(git status --porcelain)" ]]; then
   warn "working tree is dirty:"
   git status --short | sed 's/^/      /'
   confirm "Stash these local changes?" || die "aborted; commit or stash manually, then re-run"
-  git stash push -u -m "reconcile-deploy-host ${BACKUP}" >/dev/null
+  run git stash push -u -m "reconcile-deploy-host ${BACKUP}"
   ok "stashed (restore with: git stash pop)"
 else
   ok "working tree clean"
@@ -122,17 +149,25 @@ step "Switching to ${TARGET_REF}"
 confirm "Check out ${TARGET_REF} (${TARGET_SHA}) and rebuild the stack?" \
   || die "aborted; nothing changed"
 
-git checkout --quiet -B "$TARGET_REF" FETCH_HEAD
-ok "now on ${TARGET_REF} ($(git rev-parse --short HEAD))"
+run git checkout -B "$TARGET_REF" FETCH_HEAD
+[[ "$DRY_RUN" -eq 0 ]] && ok "now on ${TARGET_REF} ($(git rev-parse --short HEAD))"
 
 # --- 6. Rebuild -------------------------------------------------------------
 step "Rebuilding"
 
-docker compose "${PROFILE_ARGS[@]}" up -d --build
-ok "compose up completed"
+run docker compose "${PROFILE_ARGS[@]}" up -d --build
+[[ "$DRY_RUN" -eq 0 ]] && ok "compose up completed"
 
 # --- 7. Health --------------------------------------------------------------
 step "Health check"
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "would: poll ${API_URL}/health for 30s, then ${API_URL}/agents/health with the .env key"
+  echo
+  echo "=== Dry run complete. Nothing was changed. ==="
+  echo "Re-run without --dry-run to apply."
+  exit 0
+fi
 
 for attempt in $(seq 1 30); do
   if curl -fsS "${API_URL}/health" >/dev/null 2>&1; then
