@@ -174,7 +174,12 @@ class Finrod(BaseAgent):
             similarity_top_k=top_k,
         )
         response = await query_engine.aquery(question)
-        answer = str(response).strip() or "No relevant context found."
+        # LlamaIndex returns the literal string "Empty Response" when the
+        # synthesiser produces nothing. It is truthy, so `or` never caught it
+        # and the sentinel leaked to callers as if it were an answer.
+        answer = str(response).strip()
+        if not answer or answer == "Empty Response":
+            answer = "No relevant context found."
         sources = _sources_from_response(response)
 
         log.info(

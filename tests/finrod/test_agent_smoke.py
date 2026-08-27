@@ -163,3 +163,43 @@ async def test_forget_empty_predicate_is_noop(finrod: Finrod):
         AgentTask(agent="finrod", type="stats", payload={"action": "stats"})
     )).result["chunk_count"]
     assert remaining == 1
+
+
+async def test_empty_response_sentinel_is_not_returned_as_an_answer():
+    """LlamaIndex returns the literal string "Empty Response" when the
+    synthesiser produces nothing. It is truthy, so the old
+    ``str(response).strip() or fallback`` never caught it and the sentinel
+    leaked to callers as though it were a real answer.
+
+    Seen in production: every /memory/query returned "Empty Response" while
+    retrieval worked fine, because a TypeError inside the Anthropic wrapper
+    made synthesis return empty instead of raising.
+
+    ``node_count`` is patched alongside the query engine. Without it the
+    agent takes its "no documents" early return and never reaches the code
+    under test -- the first version of this test did exactly that and passed
+    against the unfixed code.
+    """
+    from unittest.mock import patch
+
+    agent = Finrod(llm=MockLLM(max_tokens=32), embed_model=MockEmbedding(embed_dim=EMBED_DIM))
+
+    class _EmptyResponse:
+        source_nodes: list = []
+
+        def __str__(self) -> str:
+            return "Empty Response"
+
+    async def _aquery(*_a, **_k):
+        return _EmptyResponse()
+
+    with (
+        patch.object(Finrod, "node_count", return_value=1),
+        patch.object(type(agent._index), "as_query_engine") as mk,
+    ):
+        mk.return_value.aquery = _aquery
+        result = await agent.run(
+            AgentTask(agent="finrod", type="query", payload={"message": "what about Ran"})
+        )
+
+    assert result.result["answer"] == "No relevant context found."

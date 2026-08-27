@@ -26,8 +26,14 @@ def build_llm() -> Any:
         return MockLLM(max_tokens=128)
 
     from llama_index.llms.anthropic import Anthropic
+
+    # No temperature. LlamaIndex does NOT translate this away -- it forwards
+    # it verbatim to AsyncMessages.create, which the anthropic SDK 1.x
+    # rejects. In production that surfaced as every /memory/query returning
+    # "Empty Response" while retrieval worked fine, because LlamaIndex logs
+    # the TypeError as a "Structured response error" and returns an empty
+    # synthesis rather than raising. Same root cause as the Tom outage (#83).
     return Anthropic(
         model=settings.retriever_model,
         api_key=settings.anthropic_api_key,
-        temperature=0.2,
     )
