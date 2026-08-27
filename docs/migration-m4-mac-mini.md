@@ -139,9 +139,11 @@ to hit it from your dev box at `http://100.112.3.116:5000/health`.
 ARDA_API_KEY=$(security find-generic-password -a arda -s arda-api-key -w)
 curl -s -H "x-api-key: $ARDA_API_KEY" http://localhost:5000/agents/health \
   | python3 -m json.tool
-# Confirm: model="gemini-2.5-flash" / provider="google" for sauron,
-# model="meta-llama/llama-4-scout-17b-16e-instruct" / provider="groq"
-# for the others.
+# Confirm: sauron reports model="claude-opus-5", finrod and
+# tombombadil report model="claude-haiku-4-5-20251001", and earendil
+# reports model="none" (regex planner, no LLM). provider is
+# "anthropic" for the three LLM tiers and "none" for earendil --
+# or "mock" everywhere when USE_MOCK_LLM=true.
 
 curl -s -X POST http://localhost:5000/execute/wait \
   -H "x-api-key: $ARDA_API_KEY" -H "content-type: application/json" \

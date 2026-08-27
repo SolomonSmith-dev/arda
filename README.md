@@ -11,7 +11,7 @@ flowchart TD
     Client -.->|stdio| MCP[MCP Server<br/>mcp_server/server.py]
     MCP -->|HTTP| API
 
-    API --> Sauron[Sauron<br/>orchestrator<br/>LangGraph + Claude Opus 4.7]
+    API --> Sauron[Sauron<br/>orchestrator<br/>LangGraph + Claude Opus 5]
     Sauron -->|tool_use| Earendil[Earendil<br/>executor<br/>shell via Redis queue]
     Sauron -->|tool_use| Finrod[Finrod<br/>retriever<br/>LlamaIndex + Claude Haiku 4.5]
     Sauron -->|tool_use| Tom[Tom Bombadil<br/>specialist<br/>Claude Haiku 4.5]
@@ -28,7 +28,7 @@ flowchart TD
 
 | Agent | Tier | Role | Default model |
 |---|---|---|---|
-| **Sauron** | `orchestrator` | LangGraph `StateGraph`: classifies intent via Claude's tool_use, dispatches to one specialist as a tool call, loops until Claude emits a terminal `text` block. Cross-turn memory via the checkpointer keyed by `thread_id`. | `claude-opus-4-7` |
+| **Sauron** | `orchestrator` | LangGraph `StateGraph`: classifies intent via Claude's tool_use, dispatches to one specialist as a tool call, loops until Claude emits a terminal `text` block. Cross-turn memory via the checkpointer keyed by `thread_id`. | `claude-opus-5` |
 | **Earendil** | `executor` | Plans + enqueues shell commands to a Redis-backed task queue. A separate worker process drains it and writes results back to Redis. No LLM in the agent itself — regex-based plan_task. | n/a |
 | **Finrod** | `retriever` | RAG via LlamaIndex `VectorStoreIndex`. Default in-memory `SimpleVectorStore`; `MilvusVectorStore` under the `[full]` extra. LLM + embed model + vector store are constructor-injected. | `claude-haiku-4-5-20251001` |
 | **Tom Bombadil** | `specialist` | Discord film-club bot. Conversational chat via Anthropic SDK directly; rule-based fact extractor + Finrod-backed long-term memory; reaction-confirmed note drafts. | `claude-haiku-4-5-20251001` |
@@ -151,7 +151,7 @@ Anthropic is the only LLM provider:
 
 | Tier | Default model | Volume | Notes |
 |---|---|---|---|
-| Orchestrator (Sauron) | `claude-opus-4-7` | ~1 call per user message | Tool-calling loop; usually 2-3 round trips per request |
+| Orchestrator (Sauron) | `claude-opus-5` | ~1 call per user message | Tool-calling loop; usually 2-3 round trips per request |
 | Retriever (Finrod) | `claude-haiku-4-5-20251001` | per `/memory/query` call | Synthesis only; retrieval is local |
 | Specialist (Tom Bombadil) | `claude-haiku-4-5-20251001` | per Discord turn | Conversational chat |
 | Executor (Earendil) | n/a | — | Regex planner, no LLM |

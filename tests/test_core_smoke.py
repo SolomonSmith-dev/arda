@@ -19,10 +19,10 @@ def test_settings_load():
 def test_model_router_default():
     s = Settings(use_mock_llm=False)
     assert "claude" in s.model_for_tier("orchestrator")
-    assert "llama" in s.model_for_tier("executor")
+    assert s.model_for_tier("executor") == "none"
     assert "claude" in s.model_for_tier("retriever")
     assert s.provider_for_tier("orchestrator") == "anthropic"
-    assert s.provider_for_tier("executor") == "groq"
+    assert s.provider_for_tier("executor") == "none"
     assert s.provider_for_tier("retriever") == "anthropic"
 
 
@@ -57,7 +57,7 @@ def test_models_construct_and_roundtrip():
 
 
 def test_health_status_construct():
-    h = HealthStatus(agent="sauron", status="healthy", model="gemini-2.5-flash", provider="google")
+    h = HealthStatus(agent="sauron", status="healthy", model="claude-opus-5", provider="anthropic")
     assert h.latency_ms is None
 
 
@@ -83,7 +83,8 @@ async def test_base_agent_subclass_runs():
 
     health = await d.health()
     assert health.agent == "dummy"
-    assert "llama" in health.model
+    # Executor tier is the regex planner: no model, no provider.
+    assert health.model == "none"
 
 
 def test_logger_smokes():

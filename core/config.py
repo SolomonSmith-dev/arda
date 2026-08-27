@@ -6,7 +6,10 @@ from typing import Literal
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Tier = Literal["orchestrator", "executor", "retriever", "specialist"]
-Provider = Literal["anthropic", "google", "groq", "mock"]
+Provider = Literal["anthropic", "mock", "none"]
+
+# Reported by ``/agents/health`` for tiers that make no LLM call.
+NO_MODEL = "none"
 
 
 class Settings(BaseSettings):
@@ -37,8 +40,7 @@ class Settings(BaseSettings):
     use_mock_embedder: bool | None = None
 
     # Model overrides per tier
-    orchestrator_model: str = "claude-opus-4-7"
-    executor_model: str = "meta-llama/llama-4-scout-17b-16e-instruct"
+    orchestrator_model: str = "claude-opus-5"
     # Finrod (retriever) does grounded RAG synthesis -- Haiku is the
     # right tier: fast and cheap, called via LlamaIndex's Anthropic LLM.
     retriever_model: str = "claude-haiku-4-5-20251001"
@@ -107,7 +109,9 @@ class Settings(BaseSettings):
     def model_for_tier(self, tier: Tier) -> str:
         return {
             "orchestrator": self.orchestrator_model,
-            "executor": self.executor_model,
+            # Earendil plans with regex and shells out; there is no model
+            # to name and nothing for an operator to override.
+            "executor": NO_MODEL,
             "retriever": self.retriever_model,
             "specialist": self.specialist_model,
         }[tier]
@@ -117,7 +121,7 @@ class Settings(BaseSettings):
             return "mock"
         mapping: dict[Tier, Provider] = {
             "orchestrator": "anthropic",
-            "executor": "groq",
+            "executor": "none",
             "retriever": "anthropic",
             "specialist": "anthropic",
         }
