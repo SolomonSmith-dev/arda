@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from agents.tombombadil.film_knowledge import FILM_DATABASE, FilmKnowledge
+from agents.tombombadil.film_knowledge import (
+    DEFAULT_VIEWER_NAME,
+    FILM_DATABASE,
+    FilmKnowledge,
+)
 from agents.tombombadil.letterboxd_loader import (
     load_letterboxd_export,
     merge_into_film_database,
@@ -242,3 +246,47 @@ def test_film_knowledge_honors_viewer_name_env(tmp_path, monkeypatch):
     inception = next(f for f in fk.films if f["title"] == "Inception")
     names = [w["name"] for w in inception["watchers"]]
     assert "Solomon Smith" in names
+
+
+def _export_dir(tmp_path):
+    """A minimal Letterboxd export whose profile username ("SolomonThaChef")
+    deliberately differs from the canonical name in FILM_DATABASE."""
+    (tmp_path / "profile.csv").write_text(
+        "Date Joined,Username,Given Name,Family Name,Email Address,"
+        "Location,Website,Bio,Pronoun,Favorite Films\n"
+        "2022-07-27,SolomonThaChef,Solomon,,,California,,,He / his,\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "ratings.csv").write_text(
+        "Date,Name,Year,Letterboxd URI,Rating\n"
+        "2024-01-15,Inception,2010,https://lb/inception,4.5\n",
+        encoding="utf-8",
+    )
+    return tmp_path
+
+
+def _inception_watchers(fk):
+    return [w["name"] for w in next(f for f in fk.films if f["title"] == "Inception")["watchers"]]
+
+
+def test_film_knowledge_falls_back_to_default_viewer_without_env(tmp_path, monkeypatch):
+    """The regression. With LETTERBOXD_VIEWER_NAME unset the merge used to
+    land under the raw Letterboxd username, so _resolve_person_key found no
+    match for the Discord name and Tom reported zero ratings.
+    """
+    monkeypatch.delenv("LETTERBOXD_VIEWER_NAME", raising=False)
+    fk = FilmKnowledge(letterboxd_dir=_export_dir(tmp_path))
+    assert DEFAULT_VIEWER_NAME in _inception_watchers(fk)
+    assert fk.get_user_summary(DEFAULT_VIEWER_NAME) is not None
+
+
+def test_explicit_viewer_name_beats_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("LETTERBOXD_VIEWER_NAME", "From Env")
+    fk = FilmKnowledge(letterboxd_dir=_export_dir(tmp_path), viewer_name="From Arg")
+    assert "From Arg" in _inception_watchers(fk)
+
+
+def test_env_beats_the_default(tmp_path, monkeypatch):
+    monkeypatch.setenv("LETTERBOXD_VIEWER_NAME", "From Env")
+    fk = FilmKnowledge(letterboxd_dir=_export_dir(tmp_path))
+    assert "From Env" in _inception_watchers(fk)
