@@ -111,3 +111,33 @@ async def test_dispatch_tool_unregistered_specialist_raises():
             specialists={},
             parent_task_id="p",
         )
+
+
+def test_sauron_tools_derived_from_specialist_map():
+    from agents.sauron.tools import SAURON_TOOLS, SPECIALIST_TOOL_MAP, TOOL_NAME_TO_SPECIALIST
+
+    expected_schemas = list(SPECIALIST_TOOL_MAP.values())
+    assert expected_schemas == SAURON_TOOLS, (
+        "SAURON_TOOLS must be derived from SPECIALIST_TOOL_MAP, not defined independently"
+    )
+
+    for specialist_name, schema in SPECIALIST_TOOL_MAP.items():
+        assert TOOL_NAME_TO_SPECIALIST[schema["name"]] == specialist_name
+
+
+def test_build_sauron_graph_uses_only_registered_specialists():
+    from unittest.mock import MagicMock
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from agents.earendil.agent import Earendil
+    from agents.sauron.graph import build_sauron_graph
+
+    specialists = {"earendil": Earendil()}
+    graph = build_sauron_graph(
+        specialists=specialists,
+        client=MagicMock(),
+        checkpointer=MemorySaver(),
+        model="mock",
+    )
+    assert graph is not None

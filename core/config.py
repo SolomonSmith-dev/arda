@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     )
 
     # Auth
-    arda_api_key: str = "arda-dev-key-2026"
+    arda_api_key: str
 
     # LLM providers. Anthropic is the sole provider after Phase 3:
     # Sauron (Opus, orchestrator), Finrod (Haiku, retriever), and

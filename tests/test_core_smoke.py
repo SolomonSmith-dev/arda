@@ -101,3 +101,11 @@ def test_github_config_fields_exist():
     assert hasattr(s, "github_token")
     assert hasattr(s, "github_username")
     assert s.github_username == "SolomonSmith-dev"  # default
+
+
+def test_arda_api_key_has_no_hardcoded_default():
+    field_info = Settings.model_fields["arda_api_key"]
+    assert field_info.is_required(), (
+        "arda_api_key must be required (no default) -- "
+        "remove the default so misconfigured deployments fail at startup"
+    )

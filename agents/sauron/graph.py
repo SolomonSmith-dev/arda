@@ -19,8 +19,7 @@ from agents.base import BaseAgent
 from agents.sauron.planner import Specialist
 from agents.sauron.state import ArdaState
 from agents.sauron.tools import (
-    SAURON_TOOLS,
-    TOOL_NAME_TO_SPECIALIST,
+    SPECIALIST_TOOL_MAP,
     UnknownToolError,
     dispatch_tool,
 )
@@ -29,15 +28,18 @@ from core.logging import get_logger
 log = get_logger("agents.sauron.graph")
 
 MAX_ITERATIONS = 6
-SYSTEM_PROMPT = (
-    "You are Sauron, the orchestrator of the ARDA multi-agent system. "
-    "You have three specialist tools:\n"
-    "  - earendil_execute: run shell commands on the macOS executor\n"
-    "  - finrod_query: query the knowledge base / RAG memory\n"
-    "  - tombombadil_chat: log films, ratings, or discuss cinema\n"
-    "Choose exactly one tool that matches the user's intent. After you "
-    "receive the tool_result, write a brief one-sentence summary and stop."
-)
+
+
+def _build_system_prompt(tools: list[dict[str, Any]]) -> str:
+    lines = "\n".join(f"  - {t['name']}: {t['description'][:80].rstrip()}" for t in tools)
+    count = len(tools)
+    return (
+        "You are Sauron, the orchestrator of the ARDA multi-agent system. "
+        f"You have {count} specialist tool{'s' if count != 1 else ''}:\n"
+        f"{lines}\n"
+        "Choose exactly one tool that matches the user's intent. After you "
+        "receive the tool_result, write a brief one-sentence summary and stop."
+    )
 
 
 def _block_get(block: Any, key: str, default: Any = None) -> Any:
@@ -55,12 +57,22 @@ def build_sauron_graph(
     model: str,
     max_iterations: int = MAX_ITERATIONS,
 ) -> Any:
+    _tools: list[dict[str, Any]] = [
+        SPECIALIST_TOOL_MAP[name] for name in specialists if name in SPECIALIST_TOOL_MAP
+    ]
+    _tool_map: dict[str, str] = {
+        SPECIALIST_TOOL_MAP[name]["name"]: name
+        for name in specialists
+        if name in SPECIALIST_TOOL_MAP
+    }
+    _system_prompt = _build_system_prompt(_tools)
+
     async def agent_step(state: ArdaState) -> dict[str, Any]:
         try:
             response = await client.messages.create(
                 model=model,
-                system=SYSTEM_PROMPT,
-                tools=SAURON_TOOLS,
+                system=_system_prompt,
+                tools=_tools,
                 messages=state["messages"],
                 max_tokens=1024,
             )
@@ -120,9 +132,10 @@ def build_sauron_graph(
                     tool_input=tu["input"],
                     specialists=specialists,
                     parent_task_id=state.get("task_id", ""),
+                    tool_name_to_specialist=_tool_map,
                 )
                 if intent is None:
-                    intent = TOOL_NAME_TO_SPECIALIST.get(tu["name"])
+                    intent = _tool_map.get(tu["name"])
                 last_result = result.model_dump(mode="json")
                 tool_result_blocks.append({
                     "type": "tool_result",

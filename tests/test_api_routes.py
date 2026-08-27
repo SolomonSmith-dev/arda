@@ -8,6 +8,7 @@ fallback. Verifies legacy contracts the MCP server depends on.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 
@@ -23,7 +24,7 @@ from api.routes import tasks as tasks_routes
 from core import redis_client as core_redis
 from core.redis_client import TASK_QUEUE_KEY, task_result_key
 
-API_KEY = "arda-dev-key-2026"
+API_KEY = os.environ["ARDA_API_KEY"]
 
 
 @pytest.fixture
