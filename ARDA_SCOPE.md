@@ -372,7 +372,7 @@ services:
 
 ```bash
 # API Auth
-ARDA_API_KEY=arda-dev-key-2026
+ARDA_API_KEY=replace-me-generate-with-openssl-rand-hex-32
 
 # LLM Providers
 GEMINI_API_KEY=           # Sauron (orchestrator) — get from aistudio.google.com
