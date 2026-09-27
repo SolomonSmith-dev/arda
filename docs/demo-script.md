@@ -4,6 +4,20 @@ Goal: a recruiter watches this and understands what ARDA is in 120 seconds. Reco
 
 Every command below was traced against the code on 2026-09-10. The API listens on **port 5000**, not 8000, and there is no `/chat` route.
 
+Re-run end to end on 2026-09-26 against a fresh worktree (mock path). Two fresh-clone blockers turned up and are fixed below: compose refuses to start without a `.env`, and on macOS AirPlay Receiver owns port 5000.
+
+## Before you record
+
+```bash
+cp .env.example .env
+sed -i '' "s/^ARDA_API_KEY=.*/ARDA_API_KEY=$(openssl rand -hex 32)/" .env
+export ARDA_API_KEY=$(grep ^ARDA_API_KEY= .env | cut -d= -f2)
+```
+
+`docker-compose.yml` has `env_file: .env`, so without that `cp` the very first command fails. Commands below also need `jq`.
+
+**Port 5000 on a Mac.** AirPlay Receiver (ControlCenter) listens on 5000, and `docker compose up` fails with `bind: address already in use`. Either turn it off (System Settings > General > AirDrop & Handoff > AirPlay Receiver) for the recording, or run `ARDA_PORT=5050 docker compose up -d` and swap `5000` for `5050` below. Turning it off keeps the commands identical to the README, so that is the better take.
+
 One precondition before you record: the memory shot at 1:00 needs `USE_MOCK_LLM=false` and a real `ANTHROPIC_API_KEY` in `.env`. `use_mock_llm` defaults to `True` (`core/config.py:34`) and `docker-compose.yml` sets no override, so on a stock clone Sauron answers from the mock client and cannot demonstrate memory. Every other shot runs fine on the mock path.
 
 ## Shot list

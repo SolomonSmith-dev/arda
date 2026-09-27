@@ -101,6 +101,8 @@ docker compose up -d
 curl http://localhost:5000/health
 ```
 
+On macOS, AirPlay Receiver already listens on port 5000, so the `api` container fails with `address already in use`. Either turn off AirPlay Receiver (System Settings > General > AirDrop & Handoff) or publish on another port: `ARDA_PORT=5050 docker compose up -d`, then use `localhost:5050`. `ARDA_PORT` can also live in `.env`.
+
 The default Docker image is intentionally slim: no `torch`, no `pymilvus`, no `sentence-transformers`. Finrod uses `MockEmbedding` + the in-memory `SimpleVectorStore` by default. To get real semantic embeddings via `sentence-transformers/all-MiniLM-L6-v2` and Milvus, install with the `[full]` extra (`uv sync --extra dev --extra full`) and set `USE_MOCK_EMBEDDER=false` + `MILVUS_HOST`.
 
 See `docs/cutover.md` for the deployment runbook.
