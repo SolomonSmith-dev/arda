@@ -60,6 +60,29 @@ def _execute(api_client: httpx.Client, message: str) -> str:
     return _extract_reply(body)
 
 
+def _audit(api_client: httpx.Client, text: str) -> str:
+    """``/audit [hours]``: run Rúmil directly.
+
+    Free text goes through /execute/wait and the regex planner, which reads
+    "git"/"commit" as shell intents, so an audit request needs its own
+    command to reach Rúmil.
+    """
+    payload: dict[str, Any] = {"action": "audit"}
+    parts = text.split()
+    if len(parts) > 1 and parts[1].isdigit():
+        payload["window_hours"] = int(parts[1])
+    resp = api_client.post(
+        "/agents/rumil/run",
+        json={"type": "github_audit", "payload": payload},
+        timeout=EXECUTE_TIMEOUT_SECONDS,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("status") != "completed":
+        return f"audit failed: {body.get('error') or body.get('status')}"
+    return str((body.get("result") or {}).get("reply") or "audit returned nothing")
+
+
 def _format_output(output: Any, error: str = "") -> str:
     """Render one task's ``output`` (shell dict, structured dict, or string)."""
     if isinstance(output, dict):
@@ -143,7 +166,10 @@ def _handle_update(
     )
 
     try:
-        reply = _execute(api_client, text)
+        if text == "/audit" or text.startswith("/audit "):
+            reply = _audit(api_client, text)
+        else:
+            reply = _execute(api_client, text)
     except Exception as e:
         log.error("execute_failed", chat_id=chat_id, exc=str(e))
         reply = f"agent error: {e}"

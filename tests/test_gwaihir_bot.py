@@ -214,3 +214,55 @@ def test_handle_update_replies_with_error_when_api_fails(monkeypatch):
     _handle_update(api_client, telegram_client, "tok", update)
 
     assert "agent error" in sent["body"]
+
+
+# ----- /audit (Rúmil, #66) ------------------------------------------------
+
+
+def _telegram_capturing(sent: dict) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent["body"] = request.read().decode()
+        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_audit_command_runs_rumil_not_the_shell_planner(monkeypatch):
+    import json
+
+    monkeypatch.setattr("agents.gwaihir.bot.settings.telegram_allowed_chat_ids", "42")
+    captured: dict = {}
+    api = _api_client_capturing(
+        captured, {"status": "completed", "result": {"reply": "4 commits across 2 repos"}}
+    )
+    sent: dict = {}
+    update = {"update_id": 1, "message": {"chat": {"id": 42}, "text": "/audit 72"}}
+    _handle_update(api, _telegram_capturing(sent), "tok", update)
+
+    assert captured["path"] == "/agents/rumil/run"
+    assert json.loads(captured["body"])["payload"] == {"action": "audit", "window_hours": 72}
+    assert "4 commits across 2 repos" in json.loads(sent["body"])["text"]
+
+
+def test_audit_command_reports_a_failed_audit(monkeypatch):
+    import json
+
+    monkeypatch.setattr("agents.gwaihir.bot.settings.telegram_allowed_chat_ids", "42")
+    api = _api_client_returning({"status": "failed", "error": "GITHUB_TOKEN is not set"})
+    sent: dict = {}
+    update = {"update_id": 1, "message": {"chat": {"id": 42}, "text": "/audit"}}
+    _handle_update(api, _telegram_capturing(sent), "tok", update)
+
+    assert json.loads(sent["body"])["text"] == "audit failed: GITHUB_TOKEN is not set"
+
+
+def test_audit_command_ignores_a_non_numeric_window(monkeypatch):
+    import json
+
+    monkeypatch.setattr("agents.gwaihir.bot.settings.telegram_allowed_chat_ids", "42")
+    captured: dict = {}
+    api = _api_client_capturing(captured, {"status": "completed", "result": {"reply": "ok"}})
+    update = {"update_id": 1, "message": {"chat": {"id": 42}, "text": "/audit lots"}}
+    _handle_update(api, _telegram_capturing({}), "tok", update)
+
+    assert json.loads(captured["body"])["payload"] == {"action": "audit"}

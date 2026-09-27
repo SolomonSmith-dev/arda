@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-Specialist = Literal["earendil", "finrod", "tombombadil"]
+Specialist = Literal["earendil", "finrod", "tombombadil", "rumil"]
 
 
 @dataclass(frozen=True)

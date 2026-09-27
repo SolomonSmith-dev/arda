@@ -15,6 +15,8 @@ flowchart TD
     Sauron -->|tool_use| Earendil[Earendil<br/>executor<br/>shell via Redis queue]
     Sauron -->|tool_use| Finrod[Finrod<br/>retriever<br/>LlamaIndex + Claude Haiku 4.5]
     Sauron -->|tool_use| Tom[Tom Bombadil<br/>specialist<br/>Claude Haiku 4.5]
+    Sauron -->|tool_use| Rumil[Rúmil<br/>specialist<br/>GitHub audit + Claude Haiku 4.5]
+    Rumil -->|stores snapshots| Finrod
 
     Earendil <-->|task queue| Redis[(Redis)]
     Worker[Worker<br/>agents/earendil/worker.py] <-->|pop / store| Redis
@@ -32,6 +34,7 @@ flowchart TD
 | **Earendil** | `executor` | Plans + enqueues shell commands to a Redis-backed task queue. A separate worker process drains it and writes results back to Redis. No LLM in the agent itself — regex-based plan_task. | n/a |
 | **Finrod** | `retriever` | RAG via LlamaIndex `VectorStoreIndex`. Default in-memory `SimpleVectorStore`; `MilvusVectorStore` under the `[full]` extra. LLM + embed model + vector store are constructor-injected. | `claude-haiku-4-5-20251001` |
 | **Tom Bombadil** | `specialist` | Discord film-club bot. Conversational chat via Anthropic SDK directly; rule-based fact extractor + Finrod-backed long-term memory; reaction-confirmed note drafts. | `claude-haiku-4-5-20251001` |
+| **Rúmil** | `specialist` | GitHub activity chronicler. Fetches a window of commits, PRs and contribution streak, writes a two-to-three sentence summary, stores it in Finrod. Runs daily at 8am PT via Galadriel to Telegram, or on demand with `/audit [hours]` in Telegram. | `claude-haiku-4-5-20251001` |
 | **Galadriel** | infra | Cron scheduler + worker. Calls the unified API for watch-party reminders and Letterboxd sync jobs. | n/a |
 | **Gwaihir** | infra | Telegram ops bot. Sends/receives messages on an allowlisted chat ID. | n/a |
 
@@ -120,6 +123,7 @@ agents/             One package per agent
   tombombadil/      Specialist: agent.py + bot.py + commands.py +
                     fact_extractor.py + memory.py + draft_store.py +
                     film_knowledge.py + identity.py + ... (Discord, Letterboxd)
+  rumil/            Specialist: agent.py + github.py + report.py + cron.py
   galadriel/        Cron scheduler + worker
   gwaihir/          Telegram ops bot
 
@@ -154,6 +158,7 @@ Anthropic is the only LLM provider:
 | Orchestrator (Sauron) | `claude-opus-5` | ~1 call per user message | Tool-calling loop; usually 2-3 round trips per request |
 | Retriever (Finrod) | `claude-haiku-4-5-20251001` | per `/memory/query` call | Synthesis only; retrieval is local |
 | Specialist (Tom Bombadil) | `claude-haiku-4-5-20251001` | per Discord turn | Conversational chat |
+| Specialist (Rúmil) | `claude-haiku-4-5-20251001` | ~1 call per day | Audit summary; skipped on a quiet day |
 | Executor (Earendil) | n/a | — | Regex planner, no LLM |
 | Embeddings | `MockEmbedding` (slim) / `sentence-transformers/all-MiniLM-L6-v2` ([full]) | local | $0 either way |
 | Dev / testing | All mocks | local | $0 |

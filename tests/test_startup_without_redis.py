@@ -11,6 +11,7 @@ from __future__ import annotations
 import socket
 import time
 
+import fakeredis
 from fastapi.testclient import TestClient
 
 from api import main as api_main
@@ -49,6 +50,9 @@ def test_lifespan_skips_the_cron_seed_when_redis_is_down(monkeypatch):
 def test_lifespan_seeds_the_cron_when_redis_is_up(monkeypatch):
     seeded: list[object] = []
     monkeypatch.setattr(api_main, "redis_reachable", lambda: True)
+    # Every seed must hit a live store; the real client would retry for
+    # seconds against the closed default port.
+    monkeypatch.setattr(api_main, "get_redis_sync", lambda: fakeredis.FakeRedis(decode_responses=True))
     monkeypatch.setattr(
         "agents.tombombadil.sync_job.ensure_letterboxd_sync_cron",
         lambda r, **_k: seeded.append(r),
