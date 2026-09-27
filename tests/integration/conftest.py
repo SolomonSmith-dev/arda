@@ -205,8 +205,14 @@ def make_message(
     )
 
 
-def make_interaction(user: FakeUser, channel: FakeChannel) -> FakeInteraction:
-    return FakeInteraction(user=user, channel_id=channel.id, channel=channel)
+_FROM_CHANNEL = object()
+
+
+def make_interaction(
+    user: FakeUser, channel: FakeChannel, *, channel_id: int | None | object = _FROM_CHANNEL
+) -> FakeInteraction:
+    cid = channel.id if channel_id is _FROM_CHANNEL else channel_id
+    return FakeInteraction(user=user, channel_id=cid, channel=channel)  # type: ignore[arg-type]
 
 
 # Module-level helper reused across test modules.

@@ -8,6 +8,7 @@ discord.py.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from agents.tombombadil import club, guards, memory, metrics
@@ -378,7 +379,9 @@ def register_commands(bot: commands.Bot) -> None:
     async def _sync(interaction: discord.Interaction):
         metrics.SLASH_COMMANDS.labels(name="sync").inc()
         await interaction.response.defer(ephemeral=True)
-        reply = cmd_sync(get_redis_sync(), _viewer(interaction))
+        # cmd_sync does a blocking HTTP fetch (up to 15s) plus Redis writes;
+        # run it off the event loop so the gateway heartbeat keeps going (#78).
+        reply = await asyncio.to_thread(cmd_sync, get_redis_sync(), _viewer(interaction))
         await interaction.followup.send(reply, ephemeral=True)
 
     @bot.tree.command(name="setrole", description="Override a user's club tier (owner only)")

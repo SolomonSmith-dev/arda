@@ -120,7 +120,9 @@ class FakeResponse:
 @dataclass
 class FakeInteraction:
     user: FakeUser
-    channel_id: int
+    # Optional like discord.Interaction.channel_id; it can differ from
+    # channel.id, which is how glue tests tell the two apart (#79).
+    channel_id: int | None
     channel: FakeChannel
     response: FakeResponse = field(default_factory=FakeResponse)
     followup: FakeFollowup = field(default_factory=FakeFollowup)
