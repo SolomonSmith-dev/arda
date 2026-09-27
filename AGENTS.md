@@ -25,7 +25,7 @@ worker + Redis) is already provisioned on the VM. The startup update script runs
      this worker is running; without it those tasks enqueue but never resolve.
 - Create `.env` once with `cp .env.example .env`. `USE_MOCK_LLM=true` is the default,
   so no LLM keys are required. All routes except `/health` and `/metrics` require
-  header `x-api-key: arda-dev-key-2026` (the `.env.example` default).
+  header `x-api-key: replace-me-generate-with-openssl-rand-hex-32` (the `.env.example` default).
 - In mock mode, `POST /memory/query` (Finrod) returns a placeholder `"text text ..."`
   answer — this is expected. Retrieval is real (the `sources`/`score` are genuine);
   only the LLM synthesis step is mocked.

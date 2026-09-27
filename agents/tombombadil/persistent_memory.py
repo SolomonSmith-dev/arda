@@ -119,31 +119,36 @@ def delete_note(redis, film: str, watcher: str) -> tuple[bool, str]:
     if not watcher:
         return False, "Watcher is required."
 
-    note_ids = redis.zrevrange(f"film:{film}:notes", 0, -1) or []
-    # Also try case-insensitive scan of notes:all if the exact film key
-    # is empty (titles may differ in casing from what the user types).
-    if not note_ids:
-        note_ids = redis.zrevrange("notes:all", 0, -1) or []
+    def _find(note_ids) -> tuple[str, str, float] | None:
+        for raw_id in note_ids:
+            note_id = raw_id.decode("utf-8") if isinstance(raw_id, bytes) else str(raw_id)
+            data = _decode_hash(redis.hgetall(f"note:{note_id}") or {})
+            if not data:
+                continue
+            if data.get("watcher", "") != watcher:
+                continue
+            if data.get("film", "").lower() != film.lower():
+                continue
+            try:
+                rating = float(data.get("rating", "0"))
+            except ValueError:
+                rating = 0.0
+            return note_id, data.get("film", film), rating
+        return None
+
+    # Exact-cased film key first. Fall back to a case-insensitive scan of
+    # notes:all whenever that finds nothing for *this viewer*, not only when
+    # the key is empty: a Letterboxd import ("Inception") and a hand-typed
+    # /rate ("inception") land under different keys (#80).
+    found = _find(redis.zrevrange(f"film:{film}:notes", 0, -1) or [])
+    if found is None:
+        found = _find(redis.zrevrange("notes:all", 0, -1) or [])
 
     target_id: str | None = None
     stored_film = film
     rating = 0.0
-    for raw_id in note_ids:
-        note_id = raw_id.decode("utf-8") if isinstance(raw_id, bytes) else str(raw_id)
-        data = _decode_hash(redis.hgetall(f"note:{note_id}") or {})
-        if not data:
-            continue
-        if data.get("watcher", "") != watcher:
-            continue
-        if data.get("film", "").lower() != film.lower():
-            continue
-        target_id = note_id
-        stored_film = data.get("film", film)
-        try:
-            rating = float(data.get("rating", "0"))
-        except ValueError:
-            rating = 0.0
-        break
+    if found is not None:
+        target_id, stored_film, rating = found
 
     if target_id is None:
         return False, f"No note found for **{film}**."

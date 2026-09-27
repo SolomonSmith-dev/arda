@@ -50,7 +50,7 @@ def test_arda_api_key_has_no_hardcoded_default():
     import inspect
     from core.config import Settings
     src = inspect.getsource(Settings)
-    assert "arda-dev-key-2026" not in src, (
+    assert "replace-me-generate-with-openssl-rand-hex-32" not in src, (
         "arda_api_key must not have a hardcoded default -- "
         "remove the default so misconfigured deployments fail at startup"
     )
@@ -96,7 +96,7 @@ def pytest_collection_modifyitems(config, items):
 Change line 21 in `core/config.py` from:
 
 ```python
-    arda_api_key: str = "arda-dev-key-2026"
+    arda_api_key: str = "replace-me-generate-with-openssl-rand-hex-32"
 ```
 
 To:
@@ -110,7 +110,7 @@ To:
 Change line 26:
 
 ```python
-API_KEY = "arda-dev-key-2026"
+API_KEY = "replace-me-generate-with-openssl-rand-hex-32"
 ```
 
 To:
@@ -125,7 +125,7 @@ API_KEY = os.environ["ARDA_API_KEY"]
 Change line 14:
 
 ```python
-API_KEY = "arda-dev-key-2026"
+API_KEY = "replace-me-generate-with-openssl-rand-hex-32"
 ```
 
 To:
@@ -674,7 +674,7 @@ gh pr edit 42 \
   --title "pre-Phase 2: security + design fixes + cirdan scaffold" \
   --body "$(cat <<'EOF'
 ## Summary
-- **Security:** Remove hardcoded \`arda_api_key\` default (\`arda-dev-key-2026\` was committed in a public repo and gave RCE via the /task shell endpoint on misconfigured deployments)
+- **Security:** Remove hardcoded \`arda_api_key\` default (\`replace-me-generate-with-openssl-rand-hex-32\` was committed in a public repo and gave RCE via the /task shell endpoint on misconfigured deployments)
 - **Design:** Replace static \`SAURON_TOOLS\` list with \`SPECIALIST_TOOL_MAP\`; \`build_sauron_graph\` now derives tool list from registered specialists — adding a new agent is a one-file change
 - **Production bug:** Offload \`wait_for_tasks\` to \`asyncio.to_thread\` at both call sites; stops blocking the event loop on \`/execute/wait\`
 - **Phase 2 start:** Scaffold \`Cirdan\` (GitHub audit specialist) as a wired-but-unimplemented stub; registers with Sauron, has passing smoke tests

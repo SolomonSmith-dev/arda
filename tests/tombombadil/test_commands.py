@@ -232,6 +232,39 @@ def test_cmd_ban_owner_only(r):
     assert not r.sismember("tom:bans", "999")
 
 
+def test_cmd_sync_owner_only(r, monkeypatch):
+    """#79: _require_owner is the only thing stopping a non-owner from
+    triggering a full Letterboxd sync + cron seed."""
+    from agents.tombombadil import sync_job
+
+    calls: list[str] = []
+    monkeypatch.setattr(sync_job, "run_sync", lambda *_a, **_k: calls.append("sync"))
+    monkeypatch.setattr(
+        sync_job, "ensure_letterboxd_sync_cron", lambda *_a, **_k: calls.append("seed")
+    )
+    assert tom_commands.cmd_sync(r, BRIAN) == "Owner only."
+    assert tom_commands.cmd_sync(r, STRANGER) == "Owner only."
+    assert calls == []
+
+
+def test_cmd_sync_owner_runs_seed_then_sync(r, monkeypatch):
+    from agents.tombombadil import sync_job
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        sync_job, "ensure_letterboxd_sync_cron", lambda *_a, **_k: calls.append("seed")
+    )
+
+    def _run(*_a, **_k):
+        calls.append("sync")
+        return sync_job.SyncResult(fetched=3, new=2, skipped=1, saved=2, errors=[])
+
+    monkeypatch.setattr(sync_job, "run_sync", _run)
+    reply = tom_commands.cmd_sync(r, SOLOMON)
+    assert calls == ["seed", "sync"]
+    assert "fetched=3 new=2 skipped=1 saved=2 errors=0" in reply
+
+
 def test_cmd_setrole_override(r):
     refused = tom_commands.cmd_setrole(r, BRIAN, "555", "regular", "Wes")
     assert "Owner only" in refused

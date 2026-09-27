@@ -61,7 +61,7 @@ All routes require `X-API-Key: <ARDA_API_KEY>` except `/health` and `/metrics`.
 ### Example
 
 ```bash
-export ARDA_API_KEY=arda-dev-key-2026   # required, no default; set in .env for prod
+export ARDA_API_KEY=replace-me-generate-with-openssl-rand-hex-32   # required, no default; set in .env for prod
 
 curl -s http://localhost:5000/health
 # {"status":"online","agent":"earendil","version":"0.3.0"}

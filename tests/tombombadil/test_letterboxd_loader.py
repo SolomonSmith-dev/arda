@@ -374,3 +374,35 @@ def test_merge_still_applies_themes_the_export_really_carries():
     watcher = next(w for w in ran["watchers"] if w["name"] == "Solomon Smith")
     assert watcher["themes"] != ["cinema"]
     assert watcher["take"] == "a study of betrayal and revenge"
+
+
+def _ratings_only_export(name: str) -> LetterboxdExport:
+    """A default Letterboxd export: ratings, no reviews or tags, and films
+    the seed catalogue does not know, so every entry infers only "cinema"."""
+    return LetterboxdExport(
+        name=name,
+        favorites=[],
+        entries={
+            f"obscure film {i}|2001": LetterboxdEntry(
+                title=f"Obscure Film {i}", year=2001, rating=8.0
+            )
+            for i in range(40)
+        },
+    )
+
+
+def test_ratings_only_export_never_derives_the_cinema_fallback():
+    """#77: "cinema" is infer_themes' no-signal fallback, not a preference."""
+    export = _ratings_only_export("Solomon Smith")
+    assert "cinema" not in export.watcher_record()["preferred_themes"]
+
+
+def test_ratings_only_export_keeps_curated_preferred_themes():
+    """#77: an import with no theme signal must not replace a curated profile."""
+    curated = FILM_DATABASE["people"]["Solomon Smith"]["preferred_themes"]
+    merged = merge_into_film_database(FILM_DATABASE, _ratings_only_export("Solomon Smith"))
+    person = merged["people"]["Solomon Smith"]
+    assert person["preferred_themes"] == curated
+    # The rest of the profile still comes from the import.
+    assert person["style"] == "Imported from Letterboxd"
+    assert len(person["films_watched"]) == 40

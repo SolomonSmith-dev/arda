@@ -38,3 +38,14 @@ def test_delete_note_missing(r):
     ok, msg = delete_note(r, "Missing", "Solomon Smith")
     assert not ok
     assert "No note found" in msg
+
+
+def test_delete_note_finds_own_note_when_film_key_holds_only_others(r):
+    """#80: the exact-cased ZSET is non-empty (Brian's note) but holds no note
+    for this viewer; the case-insensitive fallback must still run."""
+    save_note(r, "Inception", "Brian", 7)
+    save_note(r, "inception", "Solomon Smith", 9)
+    ok, msg = delete_note(r, "Inception", "Solomon Smith")
+    assert ok, msg
+    remaining = [r.hget(f"note:{i}", "watcher") for i in r.zrange("notes:all", 0, -1)]
+    assert remaining == ["Brian"]

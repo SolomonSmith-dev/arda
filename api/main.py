@@ -20,7 +20,7 @@ from api.routes import query as query_routes
 from api.routes import tasks as tasks_routes
 from core.config import settings
 from core.logging import get_logger
-from core.redis_client import get_redis_async, get_redis_sync
+from core.redis_client import get_redis_async, get_redis_sync, redis_reachable
 
 log = get_logger("api.main")
 
@@ -51,11 +51,15 @@ async def _make_checkpointer(stack: AsyncExitStack):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    try:
-        get_redis_sync().ping()
+    redis_up = redis_reachable()
+    if redis_up:
         log.info("redis_connected")
-    except Exception as e:
-        log.warning("redis_unreachable", exception=str(e))
+    else:
+        log.warning(
+            "redis_unreachable",
+            host=settings.redis_host,
+            port=settings.redis_port,
+        )
 
     async with AsyncExitStack() as stack:
         checkpointer = await _make_checkpointer(stack)
@@ -84,12 +88,17 @@ async def lifespan(app: FastAPI):
 
         # D4: seed the Letterboxd daily sync job so bringing Galadriel up
         # is enough — the job exists even before an operator runs /sync.
-        try:
-            from agents.tombombadil.sync_job import ensure_letterboxd_sync_cron
+        # Skipped without Redis: the seed would retry-with-backoff for ~20s
+        # and still fail (#90). The next startup or /sync seeds it.
+        if redis_up:
+            try:
+                from agents.tombombadil.sync_job import ensure_letterboxd_sync_cron
 
-            ensure_letterboxd_sync_cron(get_redis_sync())
-        except Exception as e:
-            log.warning("letterboxd_sync_cron_ensure_failed", exception=str(e))
+                ensure_letterboxd_sync_cron(get_redis_sync())
+            except Exception as e:
+                log.warning("letterboxd_sync_cron_ensure_failed", exception=str(e))
+        else:
+            log.warning("letterboxd_sync_cron_skipped", reason="redis_unreachable")
 
         yield
 
