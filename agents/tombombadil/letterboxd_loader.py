@@ -155,7 +155,10 @@ def _derive_preferred_themes(
             weight += 1
 
         for theme in themes:
-            if theme == "cinema" and len(themes) > 1:
+            # "cinema" is infer_themes' no-signal fallback, not a taste.
+            # Counting it lets a ratings-only export (every entry falls back)
+            # crown it the only preferred theme (#77).
+            if theme == "cinema":
                 continue
             counts[theme] += weight
 
@@ -369,6 +372,13 @@ def merge_into_film_database(
     film_themes_by_title = {
         f["title"].lower(): list(f.get("themes") or []) for f in films
     }
-    people[export.name] = export.watcher_record(film_themes_by_title)
+    record = export.watcher_record(film_themes_by_title)
+    # An import with no theme signal derives nothing; keep the curated
+    # profile's themes rather than blanking them (mirrors the per-watcher
+    # guard above, #73/#77).
+    curated = (people.get(export.name) or {}).get("preferred_themes") or []
+    if not record["preferred_themes"] and curated:
+        record["preferred_themes"] = list(curated)
+    people[export.name] = record
 
     return {"films": films, "people": people}
