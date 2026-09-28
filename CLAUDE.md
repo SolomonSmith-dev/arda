@@ -42,6 +42,8 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
 - **Ruff** is authoritative (`select = E,F,I,B,UP,N,SIM`, line length 100). A few legacy dirs (`earendil/`, `tombombadil/`, `earendil-mcp/`) are excluded — don't lint-chase them.
 - **Tests:** `pytest-asyncio` auto mode. `phase4`/`integration` markers gate tests needing live services; `tests/conftest.py` skips `phase4`.
 
+- **Fresh-clone demo.** The demo script must run on a clean Mac clone with no local state; PR #92 (2026-09-26) fixed the last regression. Add one line here each time a session loses more than ten minutes to something this file should have said.
+
 ## Git
 
 Develop on the branch designated for the session; commit with clear messages; open a PR only when asked. Don't push to `main` directly. Force-push only rebased feature branches, with `--force-with-lease`.
