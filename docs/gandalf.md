@@ -1,6 +1,6 @@
 # Gandalf: academic operations agent
 
-Status: spec, nothing implemented. Branch: `claude/agent-gandalf`.
+Status: spec; models, diff and store built (tests/gandalf). Branch: `claude/agent-gandalf`.
 
 Gandalf keeps a source-grounded record of school work: assignments, deadlines, lectures, readings, announcements. It detects changes between scans and produces a daily briefing. The database is the source of truth; the model only extracts, classifies, synthesizes and plans.
 
@@ -31,18 +31,18 @@ Module layout:
 ```
 agents/gandalf/
   agent.py        GandalfAgent, task.type dispatch
-  models.py       pydantic records + enums
-  store.py        SQLite access, migrations
+  models.py       pydantic records + enums (built)
+  diff.py         NEW/UNCHANGED/UPDATED/CONFLICT comparison (built)
+  store.py        SQLite access, REMOVED via missed scans (built)
   adapters/
     base.py       LMSAdapter protocol
     canvas.py     Canvas REST adapter (phase 1)
     fake.py       fixture adapter for tests
   extract.py      LLM extraction -> AcademicItem (schema-validated)
   validate.py     deadline validation, timezone handling
-  diff.py         NEW/UNCHANGED/UPDATED/REMOVED/CONFLICT
   briefing.py     briefing assembly
   llm.py          client builder
-migrations/       0001_init.sql ...
+(schema is inline in store.py for now; SQL migration files if it outgrows that)
 ```
 
 ## 3. Task types (`AgentTask.type`)
