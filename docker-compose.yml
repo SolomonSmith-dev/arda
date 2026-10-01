@@ -37,6 +37,10 @@ services:
       # Bombadil merges it into FILM_DATABASE at process start. Read-only
       # so the container can't mutate the source CSVs.
       - ./data/letterboxd:/app/data/letterboxd:ro
+      # Sauron's checkpointer (.arda/checkpoints.sqlite) and Finrod's index
+      # (.arda/finrod/) live here. Without a volume both were wiped on every
+      # image rebuild, so "durable in prod" only lasted until the next deploy.
+      - arda_state:/app/.arda
     depends_on:
       redis:
         condition: service_healthy
@@ -92,6 +96,7 @@ services:
     environment:
       REDIS_HOST: redis
       LETTERBOXD_EXPORT_DIR: /app/data/letterboxd
+      FINROD_PERSIST_DIR: /app/.arda/finrod-tom
     volumes:
       # Same Letterboxd mount as the api service. The Discord bot runs
       # in its own container with its own FilmKnowledge instance, so it
@@ -101,6 +106,9 @@ services:
       # (Solomon / regulars / strangers). Copy the .example beside it
       # and fill in real snowflakes. Gitignored on purpose.
       - ./data/tombombadil:/app/data/tombombadil:ro
+      # Tom's own Finrod (long-term facts). Same volume as the api, separate
+      # dir: two processes writing one index would overwrite each other.
+      - arda_state:/app/.arda
     depends_on:
       redis:
         condition: service_healthy
@@ -179,6 +187,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  arda_state:
   milvus_etcd:
   milvus_minio:
   milvus_data:

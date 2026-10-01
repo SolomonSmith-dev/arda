@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     # Sauron LangGraph checkpointer (SQLite path; relative to cwd)
     checkpointer_db_path: str = ".arda/checkpoints.sqlite"
 
+    # Finrod on-disk index (SimpleVectorStore + docstore), used when
+    # Milvus is not in play. Off on the mock path, like the checkpointer.
+    # Each process that owns a Finrod needs its own dir (see compose).
+    finrod_persist_dir: str = ".arda/finrod"
+
     # Redis
     redis_host: str = "localhost"
     redis_port: int = 6379

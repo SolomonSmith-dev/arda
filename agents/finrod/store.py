@@ -14,6 +14,7 @@ through `Finrod.forget(...)` instead.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from agents.finrod.embeddings import EMBED_DIM
@@ -55,3 +56,18 @@ def build_vector_store() -> Any:
     except Exception as e:
         log.warning("milvus_store_init_failed", exception=str(e))
         return SimpleVectorStore()
+
+
+def default_persist_dir() -> Path | None:
+    """Where the production Finrod keeps its index, or None on the mock path.
+
+    Namespaced by embedder: vectors from ``MockEmbedding`` are meaningless to
+    a real model, so flipping ``USE_MOCK_EMBEDDER`` starts a fresh index
+    instead of loading one it cannot search.
+    """
+    from core.config import settings
+
+    if settings.use_mock_llm:
+        return None
+    embedder = "mock" if settings.mock_embedder_enabled else "minilm"
+    return Path(settings.finrod_persist_dir) / f"{embedder}-{EMBED_DIM}"
