@@ -10,7 +10,7 @@ log = get_logger("api.routes.agents")
 
 router = APIRouter(dependencies=[Depends(require_api_key)])
 
-AGENT_NAMES = ("sauron", "earendil", "finrod", "tombombadil")
+AGENT_NAMES = ("sauron", "earendil", "finrod", "tombombadil", "rumil")
 
 
 def _get_agent(request: Request, name: str):

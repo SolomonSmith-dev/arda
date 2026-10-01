@@ -1,5 +1,8 @@
 # Phase 2: GitHub Activity Audit Workflow Implementation Plan
 
+> **Status (2026-09-26): built as the Rúmil agent (`agents/rumil/`), following
+> the translated scope in #66-#70 rather than this plan.** Kept for history.
+>
 > **Status (2026-08-26): unbuilt, and the model choice is stale.** Rescued
 > from the abandoned `feature/phase-1-infra` branch. The feature itself --
 > a daily GitHub activity audit delivered to Telegram -- has not been

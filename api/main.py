@@ -10,6 +10,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from agents.earendil.agent import Earendil
 from agents.finrod.agent import Finrod
+from agents.rumil.agent import Rumil
 from agents.sauron.agent import Sauron
 from agents.tombombadil.agent import TomBombadil
 from api.routes import agents as agents_routes
@@ -67,11 +68,13 @@ async def lifespan(app: FastAPI):
         earendil = Earendil()
         finrod = Finrod()
         tombombadil = TomBombadil()
+        rumil = Rumil(finrod=finrod)
         sauron = Sauron(
             specialists={
                 "earendil": earendil,
                 "finrod": finrod,
                 "tombombadil": tombombadil,
+                "rumil": rumil,
             },
             checkpointer=checkpointer,
         )
@@ -80,9 +83,10 @@ async def lifespan(app: FastAPI):
         app.state.earendil = earendil
         app.state.finrod = finrod
         app.state.tombombadil = tombombadil
+        app.state.rumil = rumil
         log.info(
             "agents_registered",
-            agents=["sauron", "earendil", "finrod", "tombombadil"],
+            agents=["sauron", "earendil", "finrod", "tombombadil", "rumil"],
             checkpointer=type(checkpointer).__name__,
         )
 
@@ -97,6 +101,12 @@ async def lifespan(app: FastAPI):
                 ensure_letterboxd_sync_cron(get_redis_sync())
             except Exception as e:
                 log.warning("letterboxd_sync_cron_ensure_failed", exception=str(e))
+            try:
+                from agents.rumil.cron import ensure_github_audit_cron
+
+                ensure_github_audit_cron(get_redis_sync())
+            except Exception as e:
+                log.warning("github_audit_cron_ensure_failed", exception=str(e))
         else:
             log.warning("letterboxd_sync_cron_skipped", reason="redis_unreachable")
 

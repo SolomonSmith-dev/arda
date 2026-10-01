@@ -27,6 +27,7 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
   - `earendil/` — executor. Shell tasks via a Redis queue + separate `worker.py`.
   - `finrod/` — retriever. LlamaIndex-backed RAG (`VectorStoreIndex` with `SimpleVectorStore` by default, `MilvusVectorStore` under `[full]`). LLM + embed model + vector store are constructor-injected; defaults use Anthropic Claude Haiku as the synthesis LLM and `MockEmbedding` (slim) / `HuggingFaceEmbedding` (`[full]`).
   - `tombombadil/` — Discord film-club specialist. Conversational chat via Anthropic Claude Haiku (`llm.py` builder); fact extractor + Finrod-backed long-term memory.
+  - `rumil/` — GitHub activity chronicler. `github.py` fetches commits/PRs/streak (REST search + GraphQL calendar, token required), Haiku writes the summary, the snapshot is stored in the app's Finrod. Daily job seeded from the lifespan (`cron.py`), dispatched by Galadriel to `POST /agents/rumil/run`; on demand via Gwaihir `/audit [hours]`.
   - `galadriel/` — cron/scheduler. `gwaihir/` — Telegram ops bot.
   - `base.py` (the ABC), `_anthropic_mock.py` (Anthropic-shaped mocks for tool_use *and* chat-only callers), `_llama_index_mock.py` (deterministic hash embeddings for Finrod tests).
 - **`core/`** — `config.py` (pydantic-settings singleton; per-tier model/provider routing), `models.py` (`AgentTask`/`AgentResult`), `redis_client.py`, `milvus_client.py`, `logging.py` (structlog + trace IDs).
