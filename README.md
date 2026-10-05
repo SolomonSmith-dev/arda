@@ -184,4 +184,4 @@ See [Anthropic pricing](https://docs.anthropic.com/en/docs/about-claude/pricing)
    - Tom Bombadil moved off `langchain-groq` onto the anthropic SDK directly (`#38`).
    - Dead LangChain-anthropic intent classifier + orphaned Groq/Gemini config removed (`#39`).
 
-Full scope: [`ARDA_SCOPE.md`](ARDA_SCOPE.md). Decisions: [`docs/decisions/`](docs/decisions/). Cutover runbook: [`docs/cutover.md`](docs/cutover.md). Agent guidance for Claude Code: [`CLAUDE.md`](CLAUDE.md).
+Full scope: [`docs/history/ARDA_SCOPE.md`](docs/history/ARDA_SCOPE.md). Decisions: [`docs/decisions/`](docs/decisions/). Cutover runbook: [`docs/cutover.md`](docs/cutover.md). Agent guidance for Claude Code: [`CLAUDE.md`](CLAUDE.md).
