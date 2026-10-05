@@ -31,6 +31,8 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
   - `base.py` (the ABC), `_anthropic_mock.py` (Anthropic-shaped mocks for tool_use *and* chat-only callers), `_llama_index_mock.py` (deterministic hash embeddings for Finrod tests).
 - **`core/`** — `config.py` (pydantic-settings singleton; per-tier model/provider routing), `models.py` (`AgentTask`/`AgentResult`), `redis_client.py`, `milvus_client.py`, `logging.py` (structlog + trace IDs).
 - **`api/`** — FastAPI app. `main.py` lifespan builds the agents; `_make_checkpointer` picks `MemorySaver` (mock/dev) vs durable `AsyncSqliteSaver` (prod). Generic `POST /agents/{name}/run` reaches any agent.
+- **`api/demo.py`** — public demo mode (`DEMO_MODE=true`). Allowlist middleware (everything except `/`, `/health`, `/metrics`, `/demo/*` returns 403), per-IP and daily-token budgets, a trace for the web page at `/`. Shell is refused again in `Earendil.run`, `enqueue_task` and the worker via `core/demo.py`. See `docs/deploy-demo.md`.
+- **`evals/` + `scripts/run_evals.py`** — routing and retrieval evals. CI runs `--mode mock --check` against `evals/results/baseline-mock.json`; after changing the gold set, corpus or mock, rerun with `--update-baseline`.
 - **`mcp_server/`** — MCP tools (`arda_execute / _query / _plan / _status`) that call the unified API (`api/main.py`) at `settings.arda_api_url`.
 
 ## Conventions & gotchas

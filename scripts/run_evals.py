@@ -90,7 +90,7 @@ async def build_report(args: argparse.Namespace) -> dict:
         from agents._llama_index_mock import HashEmbedding
 
         if args.mode == "mock":
-            from evals.lexical_embedding import LexicalHashEmbedding
+            from agents.finrod.lexical import LexicalHashEmbedding
 
             embed, name = LexicalHashEmbedding(), "lexical-hash-2048 (offline baseline)"
         else:
