@@ -7,9 +7,9 @@
 the source of truth anymore.
 
 For current architecture, commands, and conventions see:
-- [`README.md`](README.md) — product overview + API
-- [`CLAUDE.md`](CLAUDE.md) — agent/dev guidance
-- [`docs/decisions/`](docs/decisions/) — ADRs (including the Anthropic/LangGraph pivot)
+- [`README.md`](../../README.md) — product overview + API
+- [`CLAUDE.md`](../../CLAUDE.md) — agent/dev guidance
+- [`docs/decisions/`](../decisions/) — ADRs (including the Anthropic/LangGraph pivot)
 
 The original five build phases are complete (tagged `v1.0.0`). Remaining work
 is tracked in GitHub issues (Tom Bombadil audit deltas D2–D10, ops profiles).
