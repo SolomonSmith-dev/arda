@@ -293,13 +293,17 @@ A second limiter in front of the app. Cloudflare dashboard, zone `solomonsmith.d
 
 ## 19. Record the URL
 
-Replace the placeholder in the README demo link with `https://arda.solomonsmith.dev`, commit, push.
-
-**Done check**
+**Run** (from your laptop, in your normal clone of the repo)
 ```bash
-/usr/bin/grep -c 'https://arda.solomonsmith.dev' README.md
+sed -i 's#^\*\*Live demo:\*\*.*#**Live demo:** https://arda.solomonsmith.dev#' README.md
+git commit -am "docs: link the live demo" && git push
 ```
-Prints `1` or more once done; `0` means the placeholder is still there.
+On macOS use `sed -i ''` instead of `sed -i`.
+
+**Done check** (fails while the placeholder is still there)
+```bash
+[ "$(/usr/bin/grep -c '^\*\*Live demo:\*\* https://arda.solomonsmith.dev$' README.md)" = 1 ] && echo PASS || echo FAIL
+```
 
 ---
 

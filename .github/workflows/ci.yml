@@ -47,3 +47,7 @@ jobs:
       # baseline. Offline, no keys. Live mode is run by hand (see evals/README.md).
       - name: Evals (mock)
         run: uv run python scripts/run_evals.py --mode mock --check --no-write
+
+      # README numbers must come from the committed eval JSON.
+      - name: README results are current
+        run: uv run python scripts/update_readme.py --check

@@ -24,7 +24,7 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
 
 - **`agents/`** — one package per agent:
   - `sauron/` — orchestrator. A real LangGraph `StateGraph` (`graph.py`): `agent_step` calls Claude with the specialists exposed as native Anthropic tools (`tools.py`), `tool_dispatch` invokes the matching specialist's `BaseAgent.run`, looping until Claude stops emitting `tool_use`. Typed state in `state.py`; checkpointer gives `thread_id` cross-turn memory.
-  - `earendil/` — executor. Shell tasks via a Redis queue + separate `worker.py`.
+  - `earendil/` — executor. Shell tasks via a Redis queue + separate `worker.py`. Only commands in `core/shell_policy.py`'s allowlist run (exact match, argv, no shell); checked at enqueue and again in the worker. `EARENDIL_ALLOW_ANY_COMMAND=true` restores the old run-anything behaviour for a private host.
   - `finrod/` — retriever. LlamaIndex-backed RAG (`VectorStoreIndex` with `SimpleVectorStore` by default, `MilvusVectorStore` under `[full]`). LLM + embed model + vector store are constructor-injected; defaults use Anthropic Claude Haiku as the synthesis LLM and `MockEmbedding` (slim) / `HuggingFaceEmbedding` (`[full]`).
   - `tombombadil/` — Discord film-club specialist. Conversational chat via Anthropic Claude Haiku (`llm.py` builder); fact extractor + Finrod-backed long-term memory.
   - `galadriel/` — cron/scheduler. `gwaihir/` — Telegram ops bot.
