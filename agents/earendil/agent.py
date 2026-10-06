@@ -6,6 +6,7 @@ from typing import Any, ClassVar
 
 from agents.base import BaseAgent
 from core.config import Tier
+from core.demo import REFUSAL, ShellDisabledError, assert_shell_allowed
 from core.logging import get_logger
 from core.models import AgentResult, AgentTask, TaskStatus
 from core.redis_client import (
@@ -61,6 +62,7 @@ def normalize_task(plan_output: dict) -> dict | list[dict]:
 def enqueue_task(r, task: dict, task_id: str | None = None) -> str:
     from uuid import uuid4
 
+    assert_shell_allowed()
     if not task_id:
         task_id = str(uuid4())
     task["task_id"] = task_id
@@ -124,6 +126,16 @@ class Earendil(BaseAgent):
     name: ClassVar[str] = "earendil"
 
     async def run(self, task: AgentTask) -> AgentResult:
+        try:
+            assert_shell_allowed()
+        except ShellDisabledError:
+            log.warning("earendil_refused_demo_mode", agent_task_id=task.task_id)
+            return AgentResult(
+                task_id=task.task_id,
+                agent=self.name,
+                status=TaskStatus.FAILED,
+                error=REFUSAL,
+            )
         r = get_redis_sync()
         payload = task.payload
         wait = bool(payload.get("wait"))

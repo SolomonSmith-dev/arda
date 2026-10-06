@@ -52,7 +52,7 @@ async def test_mock_routing_is_deterministic_and_matches_baseline():
 
 
 async def test_mock_retrieval_is_deterministic_and_matches_baseline():
-    from evals.lexical_embedding import LexicalHashEmbedding
+    from agents.finrod.lexical import LexicalHashEmbedding
 
     queries = harness.load_jsonl(harness.QUERIES_PATH)
     name = "lexical-hash-2048 (offline baseline)"

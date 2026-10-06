@@ -61,6 +61,14 @@ async def lifespan(app: FastAPI):
             port=settings.redis_port,
         )
 
+    if settings.demo_mode:
+        from api.demo import build_runtime
+
+        app.state.demo = await build_runtime()
+        log.info("demo_mode_on", shell_execution="disabled")
+        yield
+        return
+
     async with AsyncExitStack() as stack:
         checkpointer = await _make_checkpointer(stack)
 
@@ -107,7 +115,13 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
+    # Demo mode hides the OpenAPI schema and docs UI along with everything else.
+    docs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.demo_mode else {}
+    app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan, **docs)
+    if settings.demo_mode:
+        from api.demo import install
+
+        install(app)
     app.include_router(health_routes.router)
     app.include_router(tasks_routes.router)
     app.include_router(agents_routes.router)

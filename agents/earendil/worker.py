@@ -5,6 +5,7 @@ import subprocess
 import time
 from typing import Any
 
+from core.demo import assert_shell_allowed
 from core.logging import get_logger
 from core.models import TaskStatus
 from core.redis_client import (
@@ -27,6 +28,7 @@ def dequeue_task(r) -> dict | None:
 
 
 def execute_system_task(payload: dict) -> dict[str, Any]:
+    assert_shell_allowed()
     command = payload.get("command", "")
     if not command:
         return {"status": "error", "error": "no command specified"}
@@ -93,6 +95,7 @@ def process_task(r, task: dict) -> None:
 
 
 def run_forever() -> None:
+    assert_shell_allowed()
     r = get_redis_sync()
     log.info("worker_started")
 
