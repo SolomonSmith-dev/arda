@@ -36,6 +36,28 @@ def execute_agent_turn(client: httpx.Client, job: Job) -> dict:
     return resp.json()
 
 
+def run_github_audit(client: httpx.Client, job: Job) -> dict:
+    """Run Rúmil through the API, so the snapshot lands in the API's Finrod.
+
+    A failed audit comes back as HTTP 200 with ``status: failed``. It is
+    translated into ``errors`` so run_one records it as a failure, and into
+    ``output`` so the Telegram message says what went wrong instead of
+    staying silent.
+    """
+    timeout = job.payload.timeout_seconds + EXEC_TIMEOUT_BUFFER_SECONDS
+    resp = client.post(
+        "/agents/rumil/run",
+        json={"type": "github_audit", "payload": {"action": "audit"}},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("status") != "completed":
+        error = str(body.get("error") or f"status {body.get('status')}")
+        return {"status": "failed", "output": f"audit failed: {error}", "errors": [error]}
+    return body
+
+
 def _format_announcement(job: Job, result: dict) -> str:
     """Render a human-readable line for delivery."""
     body = result.get("stdout") or result.get("output")
@@ -148,6 +170,8 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
                 "errors": sync_result.errors,
             }
             log.info("letterboxd_sync_dispatched", job_id=job.id, saved=sync_result.saved)
+        elif job.payload.kind == "systemEvent" and job.payload.text == "github_audit":
+            result = run_github_audit(client, job)
         else:
             result = {"status": "logged", "text": job.payload.text}
             log.info("system_event", job_id=job.id, text=job.payload.text)

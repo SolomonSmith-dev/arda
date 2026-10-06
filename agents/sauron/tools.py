@@ -72,12 +72,33 @@ TOMBOMBADIL_TOOL: dict[str, Any] = {
     },
 }
 
+RUMIL_TOOL: dict[str, Any] = {
+    "name": "rumil_github_audit",
+    "description": (
+        "Rúmil -- audits the user's recent GitHub activity: commits, pull "
+        "requests opened and merged, and contribution streak, with a short "
+        "summary. Use for 'what did I ship today', 'my GitHub activity', "
+        "'daily audit' or streak questions. Stores each audit in Finrod."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "window_hours": {
+                "type": "integer",
+                "description": "How far back to look, in hours. Default 24.",
+            }
+        },
+        "required": [],
+    },
+}
+
 # Single source of truth: specialist name -> tool schema.
 # Adding a new specialist requires only a new entry here.
 SPECIALIST_TOOL_MAP: dict[Specialist, dict[str, Any]] = {
     "earendil": EARENDIL_TOOL,
     "finrod": FINROD_TOOL,
     "tombombadil": TOMBOMBADIL_TOOL,
+    "rumil": RUMIL_TOOL,
 }
 
 # Derived constants kept for backward compatibility with direct importers.

@@ -30,6 +30,9 @@ _KNOWLEDGE_KEYWORDS = (
     "according to", "documentation", "docs",
     "memory", "remember", "recall",
 )
+_GITHUB_KEYWORDS = (
+    "github", "pull request", "audit", "streak", "what did i ship",
+)
 _SHELL_KEYWORDS = (
     "uptime", "df ", "free ", "whoami", "pwd", "ls ", "echo ",
     "system status", "disk", "memory", "process", "kill ",
@@ -60,9 +63,15 @@ class MockMessage:
     model: str = "mock"
 
 
-def _classify(text: str) -> tuple[str, dict]:
-    """Mirror planner.classify -> (tool_name, tool_input)."""
+def _classify(text: str, offered: set[str] | None = None) -> tuple[str, dict]:
+    """Mirror planner.classify -> (tool_name, tool_input).
+
+    GitHub questions go to Rúmil only when its tool is on offer; a real
+    model cannot pick a tool it was not given either.
+    """
     msg = text.lower().strip()
+    if offered and "rumil_github_audit" in offered and any(k in msg for k in _GITHUB_KEYWORDS):
+        return "rumil_github_audit", {}
     if any(k in msg for k in _FILM_KEYWORDS):
         return "tombombadil_chat", {"message": text}
     if any(k in msg for k in _KNOWLEDGE_KEYWORDS):
@@ -144,7 +153,8 @@ class _MockMessages:
 
         # First turn (or any subsequent plain user message): emit a tool_use.
         text = _extract_user_text(latest) if latest else ""
-        tool_name, tool_input = _classify(text)
+        offered = {t.get("name", "") for t in tools or []}
+        tool_name, tool_input = _classify(text, offered)
         return MockMessage(
             content=[ToolUseBlock(id=f"tu_{uuid4().hex[:8]}", name=tool_name, input=tool_input)],
             stop_reason="tool_use",

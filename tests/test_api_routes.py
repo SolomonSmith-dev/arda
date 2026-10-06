@@ -212,11 +212,11 @@ def test_query_queue_length(client: TestClient, fake_redis):
     assert resp.json()["length"] == 3
 
 
-def test_agents_health_lists_all_four(client: TestClient):
+def test_agents_health_lists_every_agent(client: TestClient):
     resp = client.get("/agents/health", headers=_auth())
     body = resp.json()
     names = {a["agent"] for a in body["agents"]}
-    assert names == {"sauron", "earendil", "finrod", "tombombadil"}
+    assert names == {"sauron", "earendil", "finrod", "tombombadil", "rumil"}
 
 
 def test_agent_direct_run(client: TestClient, fake_redis):
