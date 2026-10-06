@@ -206,3 +206,24 @@ def test_default_app_is_unchanged_without_demo_mode(monkeypatch):
     app = api_main.create_app()
     paths = {r.path for r in app.routes if isinstance(r, APIRoute)}
     assert "/execute" in paths and "/" not in paths and "/demo/ask" not in paths
+
+
+def test_film_question_goes_to_the_read_only_tom(client):
+    d = client.post("/demo/ask", json={"message": "Recommend a film like Ran."}).json()
+    assert d["trace"]["specialist"] == "tombombadil"
+    assert d["trace"]["tool_calls"][0]["tool"] == "tombombadil_chat"
+    assert d["trace"]["tool_calls"][0]["status"] == "completed"
+    assert d["answer"].startswith("[mock:")  # the chat mock echoes the user message
+
+
+def test_demo_tom_carries_no_club_data_and_no_state(client):
+    from agents.tombombadil.film_knowledge import FILM_DATABASE
+
+    tom = client.app.state.demo.sauron.specialists["tombombadil"]
+    client.post("/demo/ask", json={"message": "Recommend a film like Ran."})
+    call = tom._client._client.calls[-1]
+    prompt = call["system"]
+    names = {w["name"] for f in FILM_DATABASE["films"] for w in f["watchers"]}
+    assert names and not any(n in prompt for n in names)
+    # Stateless: exactly one user turn, no history, nothing from other visitors.
+    assert call["messages"] == [{"role": "user", "content": "Recommend a film like Ran."}]
