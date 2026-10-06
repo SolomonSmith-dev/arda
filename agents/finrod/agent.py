@@ -22,6 +22,7 @@ honor `settings.use_mock_llm` / `settings.mock_embedder_enabled`.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, ClassVar
 
 from agents.base import BaseAgent
@@ -54,8 +55,10 @@ class Finrod(BaseAgent):
         llm: Any | None = None,
         embed_model: Any | None = None,
         vector_store: Any | None = None,
+        persist_dir: str | Path | None = None,
     ):
-        from llama_index.core import StorageContext, VectorStoreIndex
+        from llama_index.core import StorageContext, VectorStoreIndex, load_index_from_storage
+        from llama_index.core.vector_stores import SimpleVectorStore
 
         self._llm = llm if llm is not None else build_llm()
         self._embed_model = embed_model if embed_model is not None else build_embed_model()
@@ -64,6 +67,23 @@ class Finrod(BaseAgent):
         )
 
         self._sealed = False
+
+        # Only the in-process SimpleVectorStore needs saving; Milvus is
+        # already durable. `persist_dir=None` keeps the old in-memory
+        # behaviour (tests, mock path).
+        self._persist_dir: Path | None = None
+        if persist_dir is not None and isinstance(self._vector_store, SimpleVectorStore):
+            self._persist_dir = Path(persist_dir)
+
+        if self._persist_dir is not None and (self._persist_dir / "docstore.json").exists():
+            storage_context = StorageContext.from_defaults(persist_dir=str(self._persist_dir))
+            self._vector_store = storage_context.vector_store
+            self._index = load_index_from_storage(
+                storage_context, embed_model=self._embed_model
+            )
+            log.info("finrod_index_loaded", path=str(self._persist_dir), nodes=self.node_count())
+            return
+
         storage_context = StorageContext.from_defaults(vector_store=self._vector_store)
         # Empty index; documents arrive via `_ingest`. Components are
         # passed explicitly so we don't mutate LlamaIndex's `Settings`
@@ -74,6 +94,15 @@ class Finrod(BaseAgent):
             storage_context=storage_context,
             embed_model=self._embed_model,
         )
+
+    def _persist(self) -> None:
+        """Write-through after every mutation. The index is small (chat facts,
+        daily snapshots), so a full rewrite is cheaper than the bookkeeping
+        an incremental scheme would need."""
+        if self._persist_dir is None:
+            return
+        self._persist_dir.mkdir(parents=True, exist_ok=True)
+        self._index.storage_context.persist(persist_dir=str(self._persist_dir))
 
     def seal(self) -> None:
         """Freeze the index: later ingest and forget calls are refused.
@@ -150,6 +179,7 @@ class Finrod(BaseAgent):
 
         before = self.node_count()
         self._index.insert(document)
+        self._persist()
         after = self.node_count()
         chunks_ingested = after - before
 
@@ -238,6 +268,7 @@ class Finrod(BaseAgent):
             return 0
 
         self._index.delete_nodes(matching_ids, delete_from_docstore=True)
+        self._persist()
         log.info("finrod_forget", predicate=predicate, deleted=len(matching_ids))
         return len(matching_ids)
 
