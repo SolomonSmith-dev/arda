@@ -1,0 +1,38 @@
+{"id": "q01", "query": "Which vector store does Finrod use by default?", "evidence": "Default in-memory `SimpleVectorStore`", "docs": ["README.md"]}
+{"id": "q02", "query": "Why does the api container fail to start on a Mac?", "evidence": "AirPlay Receiver already listens on port 5000", "docs": ["README.md"]}
+{"id": "q03", "query": "Is the health endpoint authenticated?", "evidence": "Liveness check (no auth)", "docs": ["README.md"]}
+{"id": "q04", "query": "How do I fetch the output of a queued task?", "evidence": "Poll a single task's result from Redis.", "docs": ["README.md"]}
+{"id": "q05", "query": "How does Earendil turn a message into a shell command?", "evidence": "regex-based plan_task", "docs": ["README.md"]}
+{"id": "q06", "query": "What is the rule for touching LlamaIndex global settings?", "evidence": "never** mutated", "docs": ["README.md"]}
+{"id": "q07", "query": "How should agent code obtain a Redis connection?", "evidence": "Never construct `redis.Redis(...)` inline.", "docs": ["README.md"]}
+{"id": "q08", "query": "What does the retriever do to add a document to its index?", "evidence": "Push a document into Finrod's vector store.", "docs": ["README.md"]}
+{"id": "q09", "query": "What does the slim Docker image leave out?", "evidence": "The default Docker image is intentionally slim", "docs": ["README.md"]}
+{"id": "q10", "query": "Which lint rules are authoritative in this repo?", "evidence": "Ruff** is authoritative", "docs": ["CLAUDE.md"]}
+{"id": "q11", "query": "Why can flipping use_mock_llm in a test pull in torch?", "evidence": "mirrors `use_mock_llm`", "docs": ["CLAUDE.md"]}
+{"id": "q12", "query": "Which result fields must stay stable when changing Sauron internals?", "evidence": "Preserve the `BaseAgent.run` contract", "docs": ["CLAUDE.md"]}
+{"id": "q13", "query": "Where is Sauron's checkpointer persisted in production?", "evidence": "prod = `AsyncSqliteSaver`", "docs": ["CLAUDE.md"]}
+{"id": "q14", "query": "Which test markers need live services?", "evidence": "`phase4`/`integration` markers gate tests", "docs": ["CLAUDE.md"]}
+{"id": "q15", "query": "Why must some tests clear env before importing the Tom agent?", "evidence": "builds a module-level `FilmKnowledge()`", "docs": ["CLAUDE.md"]}
+{"id": "q16", "query": "Can an accepted ADR be edited?", "evidence": "ADRs are immutable once Accepted", "docs": ["0001-decision-log-format.md"]}
+{"id": "q17", "query": "What sections does an ADR contain?", "evidence": "**Context** (the problem)", "docs": ["0001-decision-log-format.md"]}
+{"id": "q18", "query": "Where does the shared mock for LLM calls live according to the first mock decision?", "evidence": "Single shared mock at `agents/_mock_llm.py`", "docs": ["0003-mock-llm-location.md"]}
+{"id": "q19", "query": "When should the mock be split into per-agent mocks?", "evidence": "Split into per-agent mocks when **two or more agents**", "docs": ["0003-mock-llm-location.md"]}
+{"id": "q20", "query": "What was wrong with the unused Tom memory module?", "evidence": "It is dead code.", "docs": ["0004-tombombadil-memory-deferred.md"]}
+{"id": "q21", "query": "Why were the legacy Earendil HTTP tests not ported?", "evidence": "Skip the legacy HTTP test port.", "docs": ["0005-earendil-legacy-http-tests-deferred.md"]}
+{"id": "q22", "query": "Which LLM provider is canonical?", "evidence": "Anthropic is the only live LLM provider", "docs": ["0006-anthropic-langgraph-canonical.md"]}
+{"id": "q23", "query": "Which package name is the MCP server canonical under?", "evidence": "Canonical package is `mcp_server/`", "docs": ["0006-anthropic-langgraph-canonical.md"]}
+{"id": "q24", "query": "What rule governs mock method signatures?", "evidence": "A mock may not accept more than the thing it replaces", "docs": ["0007-environment-parity.md"]}
+{"id": "q25", "query": "Why do wire-contract dependencies get an upper bound?", "evidence": "Dependencies that define a wire contract get an upper bound", "docs": ["0007-environment-parity.md"]}
+{"id": "q26", "query": "What does the live smoke test do?", "evidence": "makes one minimal real call per LLM tier", "docs": ["0007-environment-parity.md"]}
+{"id": "q27", "query": "Which parameter was removed from Messages.create in SDK 1.x?", "evidence": "removed from `Messages.create` in 1.x", "docs": ["0007-environment-parity.md"]}
+{"id": "q28", "query": "When should an agent stay quiet in a group chat?", "evidence": "Stay quiet when:", "docs": ["agent-conduct.md"]}
+{"id": "q29", "query": "What formatting does Telegram prefer?", "evidence": "prefer plain text or HTML over Markdown V2", "docs": ["agent-conduct.md"]}
+{"id": "q30", "query": "How are speakers distinguished in multi-user channel history?", "evidence": "prefixed", "docs": ["agent-conduct.md", "tombombadil-memory.md"]}
+{"id": "q31", "query": "How often does the Galadriel worker poll the queue?", "evidence": "polls `cron:queue` every 5 seconds", "docs": ["galadriel.md"]}
+{"id": "q32", "query": "How do two workers avoid double-firing a job?", "evidence": "claimed atomically", "docs": ["galadriel.md"]}
+{"id": "q33", "query": "How do I start the scheduler service?", "evidence": "docker compose --profile cron up -d galadriel", "docs": ["galadriel.md"]}
+{"id": "q34", "query": "What happens to a one-shot job after it runs?", "evidence": "`delete_after_run: true` purges the job", "docs": ["galadriel.md"]}
+{"id": "q35", "query": "Is cron announce delivery real yet?", "evidence": "`announce` delivery is currently a stub", "docs": ["galadriel.md"]}
+{"id": "q36", "query": "How many turns of channel history does Tom keep?", "evidence": "Last 40 turns in a guild channel/thread", "docs": ["tombombadil-memory.md"]}
+{"id": "q37", "query": "What tier does an unknown Discord user get?", "evidence": "Fallback → `Tier.STRANGER`", "docs": ["tombombadil-memory.md"]}
+{"id": "q38", "query": "How can the owner temporarily change someone's role?", "evidence": "Redis `/setrole` override", "docs": ["tombombadil-memory.md"]}

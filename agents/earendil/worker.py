@@ -5,7 +5,9 @@ import subprocess
 import time
 from typing import Any
 
+from core.demo import assert_shell_allowed
 from core.logging import get_logger
+from core.shell_policy import argv_for, check_command
 from core.models import TaskStatus
 from core.redis_client import (
     RESULT_TTL_SECONDS,
@@ -27,14 +29,17 @@ def dequeue_task(r) -> dict | None:
 
 
 def execute_system_task(payload: dict) -> dict[str, Any]:
+    assert_shell_allowed()
     command = payload.get("command", "")
     if not command:
         return {"status": "error", "error": "no command specified"}
 
+    command = check_command(command)  # raises CommandNotAllowedError; process_task records FAILED
+    argv = argv_for(command)
     try:
         result = subprocess.check_output(
-            command,
-            shell=True,
+            argv if argv is not None else command,
+            shell=argv is None,  # shell only under EARENDIL_ALLOW_ANY_COMMAND
             text=True,
             timeout=COMMAND_TIMEOUT_SECONDS,
             stderr=subprocess.STDOUT,
@@ -93,6 +98,7 @@ def process_task(r, task: dict) -> None:
 
 
 def run_forever() -> None:
+    assert_shell_allowed()
     r = get_redis_sync()
     log.info("worker_started")
 

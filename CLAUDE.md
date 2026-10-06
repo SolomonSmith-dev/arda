@@ -24,13 +24,15 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
 
 - **`agents/`** — one package per agent:
   - `sauron/` — orchestrator. A real LangGraph `StateGraph` (`graph.py`): `agent_step` calls Claude with the specialists exposed as native Anthropic tools (`tools.py`), `tool_dispatch` invokes the matching specialist's `BaseAgent.run`, looping until Claude stops emitting `tool_use`. Typed state in `state.py`; checkpointer gives `thread_id` cross-turn memory.
-  - `earendil/` — executor. Shell tasks via a Redis queue + separate `worker.py`.
+  - `earendil/` — executor. Shell tasks via a Redis queue + separate `worker.py`. Only commands in `core/shell_policy.py`'s allowlist run (exact match, argv, no shell); checked at enqueue and again in the worker. `EARENDIL_ALLOW_ANY_COMMAND=true` restores the old run-anything behaviour for a private host.
   - `finrod/` — retriever. LlamaIndex-backed RAG (`VectorStoreIndex` with `SimpleVectorStore` by default, `MilvusVectorStore` under `[full]`). LLM + embed model + vector store are constructor-injected; defaults use Anthropic Claude Haiku as the synthesis LLM and `MockEmbedding` (slim) / `HuggingFaceEmbedding` (`[full]`).
   - `tombombadil/` — Discord film-club specialist. Conversational chat via Anthropic Claude Haiku (`llm.py` builder); fact extractor + Finrod-backed long-term memory.
   - `galadriel/` — cron/scheduler. `gwaihir/` — Telegram ops bot.
   - `base.py` (the ABC), `_anthropic_mock.py` (Anthropic-shaped mocks for tool_use *and* chat-only callers), `_llama_index_mock.py` (deterministic hash embeddings for Finrod tests).
 - **`core/`** — `config.py` (pydantic-settings singleton; per-tier model/provider routing), `models.py` (`AgentTask`/`AgentResult`), `redis_client.py`, `milvus_client.py`, `logging.py` (structlog + trace IDs).
 - **`api/`** — FastAPI app. `main.py` lifespan builds the agents; `_make_checkpointer` picks `MemorySaver` (mock/dev) vs durable `AsyncSqliteSaver` (prod). Generic `POST /agents/{name}/run` reaches any agent.
+- **`api/demo.py`**: public demo mode (`DEMO_MODE=true`). Allowlist middleware (everything except `/`, `/health`, `/metrics`, `/demo/*` returns 403), per-IP and daily-token budgets, a trace for the web page at `/`. Finrod is sealed to the demo corpus and Tom Bombadil is replaced by a stateless `DemoTom` (the real one reads Redis and its prompt holds club members' names and ratings). Shell is refused again in `Earendil.run`, `enqueue_task` and the worker via `core/demo.py`. See `docs/deploy-demo.md`.
+- **`evals/` + `scripts/run_evals.py`**: routing and retrieval evals. CI runs `--mode mock --check` against `evals/results/baseline-mock.json`; after changing the gold set, corpus or mock, rerun with `--update-baseline`.
 - **`mcp_server/`** — MCP tools (`arda_execute / _query / _plan / _status`) that call the unified API (`api/main.py`) at `settings.arda_api_url`.
 
 ## Conventions & gotchas
@@ -41,6 +43,8 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
 - **Import-time side effects exist.** `agents/tombombadil/agent.py` builds a module-level `FilmKnowledge()` at import, which reads `LETTERBOXD_EXPORT_DIR` in `__init__`. Tests needing hermeticity must clear env *before* importing it (see `tests/integration/conftest.py`).
 - **Ruff** is authoritative (`select = E,F,I,B,UP,N,SIM`, line length 100). A few legacy dirs (`earendil/`, `tombombadil/`, `earendil-mcp/`) are excluded — don't lint-chase them.
 - **Tests:** `pytest-asyncio` auto mode. `phase4`/`integration` markers gate tests needing live services; `tests/conftest.py` skips `phase4`.
+
+- **Fresh-clone demo.** The demo script must run on a clean Mac clone with no local state; PR #92 (2026-09-26) fixed the last regression. Add one line here each time a session loses more than ten minutes to something this file should have said.
 
 ## Git
 

@@ -18,6 +18,8 @@ COPY agents ./agents
 COPY api ./api
 COPY mcp_server ./mcp_server
 COPY docs ./docs
+# Demo mode serves this corpus (and the evals measure it).
+COPY evals/retrieval/corpus ./evals/retrieval/corpus
 
 # Which optional extras to bake in. Default is slim -- Finrod falls back to
 # MockEmbedding and the image stays ~400MB. Build with

@@ -83,3 +83,14 @@ def test_default_persist_dir_is_namespaced_by_embedder(monkeypatch):
     assert mock_dir is not None and real_dir is not None
     assert mock_dir.parent == real_dir.parent == Path("/data/finrod")
     assert mock_dir != real_dir
+
+
+@pytest.mark.asyncio
+async def test_a_reloaded_index_can_be_sealed_and_queried(tmp_path):
+    """The load-from-disk path returns early in __init__; demo mode's seal flag must still exist."""
+    await _finrod(tmp_path).run(_ingest("doc", "Sauron orchestrates."))
+    reloaded = _finrod(tmp_path)
+    assert reloaded._sealed is False
+    reloaded.seal()
+    res = await reloaded.run(_ingest("late", "should be refused"))
+    assert res.status == TaskStatus.FAILED and "sealed" in (res.error or "")

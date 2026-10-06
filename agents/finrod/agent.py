@@ -66,6 +66,8 @@ class Finrod(BaseAgent):
             vector_store if vector_store is not None else build_vector_store()
         )
 
+        self._sealed = False
+
         # Only the in-process SimpleVectorStore needs saving; Milvus is
         # already durable. `persist_dir=None` keeps the old in-memory
         # behaviour (tests, mock path).
@@ -102,8 +104,23 @@ class Finrod(BaseAgent):
         self._persist_dir.mkdir(parents=True, exist_ok=True)
         self._index.storage_context.persist(persist_dir=str(self._persist_dir))
 
+    def seal(self) -> None:
+        """Freeze the index: later ingest and forget calls are refused.
+
+        Demo mode seeds the demo corpus and then seals, so visitors can only
+        query that corpus and can never add to it or delete from it.
+        """
+        self._sealed = True
+
     async def run(self, task: AgentTask) -> AgentResult:
         action = task.payload.get("action", "query")
+        if self._sealed and action == "ingest":
+            return AgentResult(
+                task_id=task.task_id,
+                agent=self.name,
+                status=TaskStatus.FAILED,
+                error="refused: the index is sealed (demo mode)",
+            )
         try:
             if action == "ingest":
                 return await self._ingest(task)
@@ -239,7 +256,7 @@ class Finrod(BaseAgent):
         non-empty predicate that matches nothing returns 0; an empty
         predicate is a no-op (we never wipe the whole index).
         """
-        if not predicate:
+        if not predicate or self._sealed:
             return 0
 
         matching_ids = [

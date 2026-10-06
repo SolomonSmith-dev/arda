@@ -80,7 +80,7 @@ def test_task_system_run_command_enqueues(client: TestClient, fake_redis):
         json={
             "type": "system",
             "action": "run_command",
-            "payload": {"command": "echo hi"},
+            "payload": {"command": "uptime"},
         },
         headers=_auth(),
     )
@@ -153,7 +153,7 @@ def test_execute_wait_drains_queue(client: TestClient, fake_redis, monkeypatch):
     t = threading.Thread(target=drain_after_delay, daemon=True)
     t.start()
 
-    resp = client.post("/execute/wait", json={"message": "echo arda"}, headers=_auth())
+    resp = client.post("/execute/wait", json={"message": "whoami"}, headers=_auth())
     t.join(timeout=20)
     assert resp.status_code == 200
     body = resp.json()

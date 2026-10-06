@@ -1,0 +1,33 @@
+# Compose override for the public demo. Use with the base file, from the repo root:
+#   docker compose -p arda-demo -f docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d --build api
+# Requires Docker Compose 2.24+ (for !reset / !override).
+# Paths below resolve against the first -f file's directory, the repo root.
+name: arda-demo
+
+services:
+  api:
+    image: arda-demo:latest
+    # Loopback only: cloudflared is the one thing that may reach the app.
+    # 5001 so it never collides with a production ARDA on 5000.
+    ports: !override
+      - "127.0.0.1:5001:5000"
+    env_file: !override
+      - .env.demo
+    environment: !override
+      DEMO_MODE: "true"
+    depends_on: !reset []
+    volumes: !reset []
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 768m
+    pids_limit: 200
+
+  # No executor, no queue, no scheduler in the demo. They never start.
+  worker:
+    profiles: ["off"]
+  redis:
+    profiles: ["off"]

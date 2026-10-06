@@ -77,6 +77,8 @@ def arda_execute(params: ExecuteInput) -> str:
                 "payload": {"command": params.command},
             },
         )
+        if resp.status_code == 403:  # Earendil allowlist or demo mode refused the command
+            return json.dumps(resp.json())
         resp.raise_for_status()
         data = resp.json()
         task_id = data.get("task_id")
