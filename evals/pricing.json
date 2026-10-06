@@ -1,0 +1,10 @@
+{
+  "_note": "USD per million tokens. Left null on purpose: prices were not verified when this file was written (the pricing page was unreachable from the build sandbox). Fill from https://docs.anthropic.com/en/docs/about-claude/pricing and set verified_on. Live runs refuse to start while the active model's entry is null.",
+  "verified_on": null,
+  "models": {
+    "claude-opus-5": {"input_per_mtok": null, "output_per_mtok": null},
+    "claude-opus-5-5": {"input_per_mtok": null, "output_per_mtok": null},
+    "claude-sonnet-5-5": {"input_per_mtok": null, "output_per_mtok": null},
+    "claude-haiku-4-5-20251001": {"input_per_mtok": null, "output_per_mtok": null}
+  }
+}
