@@ -54,7 +54,9 @@ def test_normalize_task_invalid_raises():
 
 
 def test_enqueue_task_writes_queue_and_status(fake_redis):
-    tid = enqueue_task(fake_redis, {"type": "system", "action": "run_command", "payload": {}})
+    tid = enqueue_task(
+        fake_redis, {"type": "system", "action": "run_command", "payload": {"command": "uptime"}}
+    )
     assert fake_redis.llen(TASK_QUEUE_KEY) == 1
     raw = fake_redis.get(task_result_key(tid))
     assert json.loads(raw)["status"] == TaskStatus.QUEUED
@@ -83,7 +85,7 @@ async def test_earendil_run_with_workflow_message_enqueues_multiple(fake_redis):
 @pytest.mark.asyncio
 async def test_earendil_run_with_direct_task(fake_redis):
     e = Earendil()
-    direct = {"type": "system", "action": "run_command", "payload": {"command": "echo hi"}}
+    direct = {"type": "system", "action": "run_command", "payload": {"command": "uptime"}}
     task = AgentTask(agent="earendil", type="task", payload={"task": direct})
     result = await e.run(task)
     assert result.status == TaskStatus.QUEUED
