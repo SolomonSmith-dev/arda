@@ -6,6 +6,7 @@ import fakeredis
 import pytest
 
 from agents.earendil import worker
+from core.config import settings
 from core.models import TaskStatus
 from core.redis_client import TASK_QUEUE_KEY, task_result_key
 
@@ -25,7 +26,8 @@ def test_dequeue_pops_json_task(fake_redis):
     assert worker.dequeue_task(fake_redis) == task
 
 
-def test_process_task_writes_completed_for_run_command(fake_redis):
+def test_process_task_writes_completed_for_run_command(fake_redis, monkeypatch):
+    monkeypatch.setattr(settings, "earendil_allow_any_command", True)  # legacy path: shell=True
     task = {
         "task_id": "t1",
         "type": "system",
@@ -57,7 +59,8 @@ def test_execute_system_task_missing_command():
     assert "no command" in result["error"]
 
 
-def test_full_enqueue_dequeue_process_cycle(fake_redis):
+def test_full_enqueue_dequeue_process_cycle(fake_redis, monkeypatch):
+    monkeypatch.setattr(settings, "earendil_allow_any_command", True)  # legacy path: shell=True
     task = {
         "task_id": "cycle-1",
         "type": "system",
