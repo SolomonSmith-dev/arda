@@ -57,7 +57,7 @@ uv run python scripts/run_evals.py --mode mock --check --no-write
 ```bash
 uv run python scripts/run_evals.py --mode live --model claude-haiku-4-5-20251001 --max-usd 5
 ```
-**Expect** a markdown summary at the end, then `wrote evals/results/<date>-live.json and .md`. If it stops with a spend-cap message, nothing is written; raise nothing, check your prices in step 1, and rerun.
+**Expect** a markdown summary at the end, then `wrote evals/results/<date>-live.json and .md`. If it stops with a spend-cap message, nothing is written (the exception is uncaught). Check the prices from step 1 and the ledger total before rerunning.
 
 **Done check** (the file exists, the cost is under the cap, and tokens were logged)
 ```bash
