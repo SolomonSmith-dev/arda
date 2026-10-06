@@ -197,8 +197,9 @@ def _get_finrod():
     # Lazy import + lazy construction so unit tests that don't touch
     # long-term memory don't pay the embedder/store init cost.
     from agents.finrod.agent import Finrod
+    from agents.finrod.store import default_persist_dir
 
-    return Finrod()
+    return Finrod(persist_dir=default_persist_dir())
 
 
 def _set_finrod_for_tests(finrod) -> None:

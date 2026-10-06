@@ -11,6 +11,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from agents.earendil.agent import Earendil
 from agents.finrod.agent import Finrod
+from agents.finrod.store import default_persist_dir
 from agents.rumil.agent import Rumil
 from agents.sauron.agent import Sauron
 from agents.tombombadil.agent import TomBombadil
@@ -76,7 +77,7 @@ async def lifespan(app: FastAPI):
         checkpointer = await _make_checkpointer(stack)
 
         earendil = Earendil()
-        finrod = Finrod()
+        finrod = Finrod(persist_dir=default_persist_dir())
         tombombadil = TomBombadil()
         rumil = Rumil(finrod=finrod)
         sauron = Sauron(
