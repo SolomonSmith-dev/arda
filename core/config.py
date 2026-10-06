@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     # for local dev outside compose.
     internal_api_url: str = "http://api:5000"
 
+    # Earendil runs only allowlisted commands (core/shell_policy.py). Set true on a
+    # private, trusted host to run any command, as before the allowlist existed.
+    earendil_allow_any_command: bool = False
+
     # Public demo mode. Disables every path to shell execution, serves the web
     # page at /, and rate-limits it. Off by default; see docs/deploy-demo.md.
     demo_mode: bool = False

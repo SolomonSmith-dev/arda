@@ -16,6 +16,7 @@ from api.middleware.auth import require_api_key
 from core.logging import get_logger
 from core.models import AgentTask, TaskStatus
 from core.redis_client import RESULT_TTL_SECONDS, get_redis_sync, task_result_key
+from core.shell_policy import CommandNotAllowedError
 
 log = get_logger("api.routes.tasks")
 
@@ -94,6 +95,8 @@ def handle_task(req: TaskRequest) -> dict:
             return {"status": "queued", "queue": "task_queue"}
 
         return {"status": "error", "error": "unsupported task type/action"}
+    except CommandNotAllowedError:
+        raise  # the app-level handler turns this into a 403
     except Exception as e:
         log.error("handle_task_failed", exception=str(e))
         return {"status": "error", "error": str(e)}
