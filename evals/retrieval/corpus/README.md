@@ -1,35 +1,8 @@
 # ARDA
 
-<!-- badges:start -->
-[![CI](https://github.com/SolomonSmith-dev/arda/actions/workflows/ci.yml/badge.svg)](https://github.com/SolomonSmith-dev/arda/actions/workflows/ci.yml) ![Python](https://img.shields.io/badge/python-3.12+-blue.svg) ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![routing accuracy (mock)](https://img.shields.io/badge/routing_accuracy_%28mock%29-75.9%25-lightgrey)
-<!-- badges:end -->
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg) ![Python](https://img.shields.io/badge/python-3.12+-blue.svg) ![Tests](https://img.shields.io/badge/tests-passing-success)
 
-**One LangGraph orchestrator routes each request to a shell executor, a RAG retriever or a film-club specialist, behind a single FastAPI API and one MCP server.**
-
-**Live demo:** _coming soon, deploy runbook in [`docs/deploy-demo.md`](docs/deploy-demo.md)_
-
-![ARDA demo page in mock mode: a question, the retrieved answer, and a trace of specialist, tool calls, latency and tokens](docs/img/demo-page.png)
-
-*The public demo page (`DEMO_MODE=true`), shown in mock mode. Shell execution is refused in the router, the agent and the worker.*
-
-## Results
-
-<!-- results:start -->
-| Metric | Mock baseline | Live |
-|---|---|---|
-| Routing accuracy | 75.9% (n=54) | not run yet |
-| Prompt-injection block rate | 25.0% (n=16) | not run yet |
-| Retrieval recall@5 | 81.6% | not run yet |
-| Retrieval MRR@10 | 0.725 | not run yet |
-| Routing latency p50 / p95 | 2.31 / 2.57 ms | not run yet |
-| Cost per request | $0.0000 | not run yet |
-
-Sources: mock: [`evals/results/2026-10-05-mock.json`](evals/results/2026-10-05-mock.json).
-
-**How to read this.** The mock column measures the offline test doubles: a keyword router that cannot answer "none", and a lexical bag-of-words embedder. It is a regression baseline that CI checks for determinism, not a claim about Claude. The low injection block rate is the point: on the default stack the only guard against a shell-bound prompt is the router. Public demo mode closes that gap structurally. It refuses shell execution at the API router, inside the Earendil agent and in the worker, and `tests/test_demo_mode.py` checks every route. The chance floor for retrieval on this corpus is 26.3% recall@5. The live column fills in when a run against the real API is committed (`scripts/run_evals.py --mode live`, hard spend cap, see [`evals/README.md`](evals/README.md)).
-<!-- results:end -->
-
-## Architecture
+A multi-agent system behind one FastAPI entry point. One unified codebase, one HTTP contract, one MCP surface, Tolkien-named specialists doing the work. The orchestrator (Sauron) is a real LangGraph `StateGraph` that drives the agent loop with native Anthropic `tool_use` blocks; each specialist is a tool, the graph runs them, the result is the response.
 
 ```mermaid
 flowchart TD
@@ -42,8 +15,6 @@ flowchart TD
     Sauron -->|tool_use| Earendil[Earendil<br/>executor<br/>shell via Redis queue]
     Sauron -->|tool_use| Finrod[Finrod<br/>retriever<br/>LlamaIndex + Claude Haiku 4.5]
     Sauron -->|tool_use| Tom[Tom Bombadil<br/>specialist<br/>Claude Haiku 4.5]
-    Sauron -->|tool_use| Rumil[Rúmil<br/>specialist<br/>GitHub audit + Claude Haiku 4.5]
-    Rumil -->|stores snapshots| Finrod
 
     Earendil <-->|task queue| Redis[(Redis)]
     Worker[Worker<br/>agents/earendil/worker.py] <-->|pop / store| Redis
@@ -53,14 +24,6 @@ flowchart TD
     Sauron <-->|checkpointer| Checkpoint[(MemorySaver dev<br/>AsyncSqliteSaver prod)]
 ```
 
-Sauron is a real LangGraph `StateGraph`: Claude picks a specialist through native `tool_use`, the graph runs it, and loops until Claude stops calling tools. Each specialist is a `BaseAgent` with an async `run(AgentTask) -> AgentResult` contract. In demo mode the executor is swapped for a stub that refuses, and Finrod is sealed to a fixed corpus.
-
-## What I'd do next
-
-- Run the eval suite against Claude and commit it, so the Results table reports the model and not the mock, and compare Haiku with Opus on routing cost and accuracy.
-- Replace Earendil's pass-through planner with an allowlisted command schema, so shell safety stops depending on the router alone.
-- Merge the two finished branches (Finrod index persistence, GitHub activity audit) and move retrieval from the lexical baseline to MiniLM embeddings on a host that can run them.
-
 ## The agents
 
 | Agent | Tier | Role | Default model |
@@ -69,7 +32,6 @@ Sauron is a real LangGraph `StateGraph`: Claude picks a specialist through nativ
 | **Earendil** | `executor` | Plans + enqueues shell commands to a Redis-backed task queue. A separate worker process drains it and writes results back to Redis. No LLM in the agent itself - regex-based plan_task. | n/a |
 | **Finrod** | `retriever` | RAG via LlamaIndex `VectorStoreIndex`. Default in-memory `SimpleVectorStore`; `MilvusVectorStore` under the `[full]` extra. LLM + embed model + vector store are constructor-injected. | `claude-haiku-4-5-20251001` |
 | **Tom Bombadil** | `specialist` | Discord film-club bot. Conversational chat via Anthropic SDK directly; rule-based fact extractor + Finrod-backed long-term memory; reaction-confirmed note drafts. | `claude-haiku-4-5-20251001` |
-| **Rúmil** | `specialist` | GitHub activity chronicler. Fetches a window of commits, PRs and contribution streak, writes a two-to-three sentence summary, stores it in Finrod. Runs daily at 8am PT via Galadriel to Telegram, or on demand with `/audit [hours]` in Telegram. | `claude-haiku-4-5-20251001` |
 | **Galadriel** | infra | Cron scheduler + worker. Calls the unified API for watch-party reminders and Letterboxd sync jobs. | n/a |
 | **Gwaihir** | infra | Telegram ops bot. Sends/receives messages on an allowlisted chat ID. | n/a |
 
@@ -160,7 +122,6 @@ agents/             One package per agent
   tombombadil/      Specialist: agent.py + bot.py + commands.py +
                     fact_extractor.py + memory.py + draft_store.py +
                     film_knowledge.py + identity.py + ... (Discord, Letterboxd)
-  rumil/            Specialist: agent.py + github.py + report.py + cron.py
   galadriel/        Cron scheduler + worker
   gwaihir/          Telegram ops bot
 
@@ -180,11 +141,9 @@ mcp_server/         FastMCP server exposing arda_execute / arda_plan /
                     arda_query / arda_status as Claude Code tools,
                     wired to the unified api/main.py over HTTP
 
-docs/               ADRs + cutover and demo-deploy runbooks + Tom Bombadil specs
+docs/               ADRs + cutover runbook + Tom Bombadil specs
 tests/              pytest suite -- mock-by-default, runs without keys
-evals/              Routing + retrieval eval sets, runner library, committed results
-deploy/demo/        Compose override + cloudflared template for the public demo
-scripts/            dev.sh, ingest.py, ingest_brain_db.py, run_evals.py, update_readme.py
+scripts/            dev.sh, ingest.py, ingest_brain_db.py
 .github/workflows/  CI: uv + ruff + pytest on every PR
 ```
 
@@ -197,7 +156,6 @@ Anthropic is the only LLM provider:
 | Orchestrator (Sauron) | `claude-opus-5` | ~1 call per user message | Tool-calling loop; usually 2-3 round trips per request |
 | Retriever (Finrod) | `claude-haiku-4-5-20251001` | per `/memory/query` call | Synthesis only; retrieval is local |
 | Specialist (Tom Bombadil) | `claude-haiku-4-5-20251001` | per Discord turn | Conversational chat |
-| Specialist (Rúmil) | `claude-haiku-4-5-20251001` | ~1 call per day | Audit summary; skipped on a quiet day |
 | Executor (Earendil) | n/a | - | Regex planner, no LLM |
 | Embeddings | `MockEmbedding` (slim) / `sentence-transformers/all-MiniLM-L6-v2` ([full]) | local | $0 either way |
 | Dev / testing | All mocks | local | $0 |
@@ -226,4 +184,4 @@ See [Anthropic pricing](https://docs.anthropic.com/en/docs/about-claude/pricing)
    - Tom Bombadil moved off `langchain-groq` onto the anthropic SDK directly (`#38`).
    - Dead LangChain-anthropic intent classifier + orphaned Groq/Gemini config removed (`#39`).
 
-Full scope: [`docs/history/ARDA_SCOPE.md`](docs/history/ARDA_SCOPE.md). Decisions: [`docs/decisions/`](docs/decisions/). Cutover runbook: [`docs/cutover.md`](docs/cutover.md). Agent guidance for Claude Code: [`CLAUDE.md`](CLAUDE.md).
+Full scope: [`ARDA_SCOPE.md`](ARDA_SCOPE.md). Decisions: [`docs/decisions/`](docs/decisions/). Cutover runbook: [`docs/cutover.md`](docs/cutover.md). Agent guidance for Claude Code: [`CLAUDE.md`](CLAUDE.md).

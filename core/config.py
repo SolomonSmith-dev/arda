@@ -84,6 +84,21 @@ class Settings(BaseSettings):
     # for local dev outside compose.
     internal_api_url: str = "http://api:5000"
 
+    # Earendil runs only allowlisted commands (core/shell_policy.py). Set true on a
+    # private, trusted host to run any command, as before the allowlist existed.
+    earendil_allow_any_command: bool = False
+
+    # Public demo mode. Disables every path to shell execution, serves the web
+    # page at /, and rate-limits it. Off by default; see docs/deploy-demo.md.
+    demo_mode: bool = False
+    demo_rate_limit_per_ip: int = 10  # requests per rolling hour, per client IP
+    demo_daily_token_cap: int = 150_000  # input+output tokens per UTC day, all clients
+    demo_max_message_chars: int = 500
+    # Behind a Cloudflare Tunnel the client IP arrives in CF-Connecting-IP. Only trust
+    # it when the API port is reachable solely through the tunnel (loopback bind).
+    demo_trust_cf_header: bool = False
+    demo_corpus_dir: str = "evals/retrieval/corpus"
+
     # Logging
     log_level: str = "INFO"
     log_format: Literal["json", "console"] = "json"

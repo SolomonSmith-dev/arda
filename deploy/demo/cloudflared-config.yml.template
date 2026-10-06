@@ -1,0 +1,10 @@
+# Template. The runbook fills TUNNEL_ID and writes this to /etc/cloudflared/config.yml.
+# The credentials file is created by `cloudflared tunnel create` and stays on the
+# server. It is a secret: do not copy it into the repo.
+tunnel: TUNNEL_ID
+credentials-file: /etc/cloudflared/TUNNEL_ID.json
+
+ingress:
+  - hostname: arda.solomonsmith.dev
+    service: http://127.0.0.1:5001
+  - service: http_status:404

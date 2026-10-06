@@ -40,7 +40,7 @@ worker + Redis) is already provisioned on the VM. The startup update script runs
 - Audit code burn-down complete: #44 (D2), #45 (D7/D3), #46 (D6/D8/D9/D10), #48 (I1).
 - ADR 0006 (Anthropic + `mcp_server/` canonical); `pyproject` 0.3.0.
 - Core product works mock-by-default: Sauron / Earendil / Finrod / Tom / Galadriel / Gwaihir.
-- `ARDA_SCOPE.md` is **historical** — trust README, CLAUDE.md, ADRs, and this file.
+- `docs/history/ARDA_SCOPE.md` is **historical** — trust README, CLAUDE.md, ADRs, and this file.
 
 ### Deploy host reality (verified 2026-08-27)
 

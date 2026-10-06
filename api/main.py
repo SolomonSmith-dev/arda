@@ -4,7 +4,8 @@ import contextlib
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -22,6 +23,7 @@ from api.routes import tasks as tasks_routes
 from core.config import settings
 from core.logging import get_logger
 from core.redis_client import get_redis_async, get_redis_sync, redis_reachable
+from core.shell_policy import CommandNotAllowedError
 
 log = get_logger("api.main")
 
@@ -61,6 +63,14 @@ async def lifespan(app: FastAPI):
             host=settings.redis_host,
             port=settings.redis_port,
         )
+
+    if settings.demo_mode:
+        from api.demo import build_runtime
+
+        app.state.demo = await build_runtime()
+        log.info("demo_mode_on", shell_execution="disabled")
+        yield
+        return
 
     async with AsyncExitStack() as stack:
         checkpointer = await _make_checkpointer(stack)
@@ -117,7 +127,18 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan)
+    # Demo mode hides the OpenAPI schema and docs UI along with everything else.
+    docs = {"docs_url": None, "redoc_url": None, "openapi_url": None} if settings.demo_mode else {}
+    app = FastAPI(title=API_TITLE, version=API_VERSION, lifespan=lifespan, **docs)
+    if settings.demo_mode:
+        from api.demo import install
+
+        install(app)
+
+    @app.exception_handler(CommandNotAllowedError)
+    async def _command_not_allowed(_: Request, exc: CommandNotAllowedError) -> JSONResponse:
+        return JSONResponse({"status": "refused", "error": str(exc)}, status_code=403)
+
     app.include_router(health_routes.router)
     app.include_router(tasks_routes.router)
     app.include_router(agents_routes.router)
