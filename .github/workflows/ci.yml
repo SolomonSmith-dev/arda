@@ -29,25 +29,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Ruff
-        run: uv run ruff check .
-
-      # agents + core only. The tests/ tree is deliberately excluded: test
-      # doubles fake third-party shapes on purpose and typing them adds noise
-      # without catching bugs. This runs on the same slim install as
-      # everything else, which the [tool.mypy] overrides in pyproject.toml
-      # account for (pymilvus and the llama-index extras are [full]-only).
-      - name: Mypy
-        run: uv run mypy agents core
-
-      - name: Pytest
-        run: uv run pytest tests/ -q
-
-      # Mock-mode evals: determinism + regression against the committed
-      # baseline. Offline, no keys. Live mode is run by hand (see evals/README.md).
-      - name: Evals (mock)
-        run: uv run python scripts/run_evals.py --mode mock --check --no-write
-
-      # README numbers must come from the committed eval JSON.
-      - name: README results are current
-        run: uv run python scripts/update_readme.py --check
+      # One gate: the same script every agent runs before it says done.
+      # Steps: ruff, mypy (agents + core), pytest, mock evals, README results check.
+      - name: Gate
+        run: scripts/check.sh
