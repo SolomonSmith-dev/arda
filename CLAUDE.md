@@ -47,6 +47,10 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
 
 - **Fresh-clone demo.** The demo script must run on a clean Mac clone with no local state; PR #92 (2026-09-26) fixed the last regression. Add one line here each time a session loses more than ten minutes to something this file should have said.
 
+## Factory
+
+Agent work follows `factory/AGENTS.md`: backlog row, own worktree (`factory/new-task.sh`), claims on hot files, one gate (`scripts/check.sh`), a different-family review (`factory/review.sh`), human merge.
+
 ## Git
 
 Develop on the branch designated for the session; commit with clear messages; open a PR only when asked. Don't push to `main` directly. Force-push only rebased feature branches, with `--force-with-lease`.
