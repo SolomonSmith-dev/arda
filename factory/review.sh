@@ -30,12 +30,20 @@ if [ "${#diff}" -gt "$max_chars" ]; then
   exit 4
 fi
 
+command -v ollama >/dev/null || { echo "ollama is not on PATH" >&2; exit 2; }
+
 out="$fdir/REVIEW-$slug.md"
 {
   cat "$repo_root/factory/prompts/reviewer.md"
   echo; echo "## STATUS"; cat "$fdir/STATUS-$slug.md" 2>/dev/null || true
   echo; echo "## DIFF (origin/$base...HEAD)"; echo '```diff'; echo "$diff"; echo '```'
 } | ollama run "$model" > "$out"
+
+# A reviewer that returns nothing, or prose with no verdict, must not read as an approval.
+if ! /usr/bin/grep -qE '^NO FINDINGS$|BLOCKER|MAJOR|MINOR' "$out"; then
+  echo "REFUSED: $out has no verdict (neither NO FINDINGS nor a BLOCKER/MAJOR/MINOR finding). Treat the review as not done." >&2
+  exit 5
+fi
 
 echo "review written to $out"
 tail -n 5 "$out"

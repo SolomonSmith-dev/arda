@@ -21,6 +21,10 @@ case "${1:-}" in
     echo "claimed $path for $slug" ;;
   release)
     path="${2:?path}"; slug="${3:?slug}"
+    holder="$(awk -F' \\| ' -v p="$path" '$1==p {print $2}' "$claims" | head -1)"
+    if [ "$holder" != "$slug" ]; then
+      echo "nothing to release: $path is not claimed by $slug" >&2; exit 1
+    fi
     tmp="$(mktemp)"
     awk -F' \\| ' -v p="$path" -v s="$slug" '!($1==p && $2==s)' "$claims" > "$tmp"
     mv "$tmp" "$claims"

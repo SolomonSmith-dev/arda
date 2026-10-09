@@ -78,9 +78,9 @@ def test_reviewer_refuses_the_writers_family(model, tmp_path):
     assert res.returncode == 3 and "same family" in res.stderr
 
 
-def test_reviewer_refuses_an_oversized_diff_instead_of_reviewing_half(tmp_path):
+def _task_with_a_change(tmp_path, slug):
     fdir = tmp_path / "state"
-    wt = fdir / "wt" / "big"
+    wt = fdir / "wt" / slug
     wt.mkdir(parents=True)
     run(["git", "init", "-q", "-b", "main"], cwd=wt)
     ident = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
@@ -90,8 +90,54 @@ def test_reviewer_refuses_an_oversized_diff_instead_of_reviewing_half(tmp_path):
     run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"], cwd=wt)
     (wt / "a.txt").write_text("b" * 500)
     run(["git", *ident, "commit", "-qam", "change"], cwd=wt)
+    return fdir
+
+
+def test_reviewer_refuses_an_oversized_diff_instead_of_reviewing_half(tmp_path):
+    fdir = _task_with_a_change(tmp_path, "big")
     res = run(
         [str(ROOT / "factory" / "review.sh"), "big"],
         env={"REVIEW_MODEL": "qwen2.5-coder", "FACTORY_DIR": str(fdir), "REVIEW_MAX_CHARS": "100"},
     )
     assert res.returncode == 4 and "Split the task" in res.stderr
+
+
+def _fake_ollama(tmp_path, output):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    exe = bin_dir / "ollama"
+    exe.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf '%s' '{output}'\n")
+    exe.chmod(0o755)
+    import os
+
+    return f"{bin_dir}:{os.environ['PATH']}"
+
+
+@pytest.mark.parametrize(
+    ("output", "code"),
+    [
+        ("", 5),  # a dead or silent reviewer is not an approval
+        ("looks fine to me", 5),  # prose without a verdict is not an approval
+        ("NO FINDINGS", 0),
+        ("BLOCKER a.py:1 secret committed", 0),
+    ],
+)
+def test_reviewer_output_must_carry_a_verdict(tmp_path, output, code):
+    fdir = _task_with_a_change(tmp_path, "t")
+    path = _fake_ollama(tmp_path, output)
+    res = run(
+        [str(ROOT / "factory" / "review.sh"), "t"],
+        env={"REVIEW_MODEL": "qwen2.5-coder", "FACTORY_DIR": str(fdir), "PATH": path},
+    )
+    assert res.returncode == code, res.stderr
+    if code == 5:
+        assert "no verdict" in res.stderr
+
+
+def test_release_by_a_non_holder_fails_and_changes_nothing(tmp_path):
+    env = {"FACTORY_DIR": str(tmp_path)}
+    claim = str(ROOT / "factory" / "claim.sh")
+    run([claim, "claim", "README.md", "a"], env=env)
+    res = run([claim, "release", "README.md", "b"], env=env)
+    assert res.returncode == 1 and "nothing to release" in res.stderr
+    assert "README.md | a" in (tmp_path / "CLAIMS.md").read_text()
