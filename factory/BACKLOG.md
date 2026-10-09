@@ -7,6 +7,6 @@ that finishes it. Every row has an acceptance check someone can run.
 |---|---|---|---|
 | F-1 | Live eval run on `claude-haiku-4-5-20251001` | `evals/results/<date>-live.json` committed, `cost_usd_total` <= 5, `scripts/update_readme.py --check` passes | BLOCKED: needs the owner's `ANTHROPIC_API_KEY` and verified prices in `evals/pricing.json` (`docs/live-eval-checklist.md`) |
 | F-2 | Deploy the public demo | every done check in `docs/deploy-demo.md` prints PASS | BLOCKED: needs the owner's server and Cloudflare access |
-| F-3 | Parameterised Earendil allowlist (`ls <path>` limited to set roots) | tests refuse `..` escapes and absolute paths outside the roots; `scripts/check.sh` passes | TODO |
+| F-3 | Parameterised Earendil allowlist (`ls -la <path>` limited to set roots) | spec `factory/tasks/F-3.md`; `tests/earendil/test_shell_policy_params.py` passes with the `xfail` markers deleted; `scripts/check.sh` passes | TODO (spec and red tests in repo) |
 | F-4 | `scripts/check.sh` remote switch: `REMOTE=<host>` runs the gate on the sleeper | `REMOTE=<host> scripts/check.sh` ends in GATE PASS on the host, and exits non-zero when rsync or ssh fails | TODO |
 | F-5 | Retake `docs/img/demo-page.png` against the live demo | image shows the `live: Claude` badge | BLOCKED: depends on F-2 |
