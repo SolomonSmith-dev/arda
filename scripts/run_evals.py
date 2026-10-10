@@ -86,6 +86,17 @@ async def build_report(args: argparse.Namespace) -> dict:
             client, model, gold, prices=prices, max_usd=args.max_usd, spent_before_usd=spent_before
         )
 
+    if args.suite in ("all", "cases"):
+        if args.mode == "mock":
+            from agents._anthropic_mock import MockAnthropicClient
+
+            cases = harness.load_cases()
+            report["datasets"]["cases"] = harness.sha256_of(*harness.CASES_DIR.glob("*.yaml"))
+            report["cases"] = await harness.run_cases(MockAnthropicClient(model="mock"), "mock", cases)
+        else:
+            # Live cases would call the judge model, which the spend ledger does not meter yet.
+            print("cases: skipped in live mode (judge spend is not metered yet)")
+
     if args.suite in ("all", "retrieval"):
         from agents._llama_index_mock import HashEmbedding
 
@@ -110,7 +121,7 @@ async def build_report(args: argparse.Namespace) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", choices=["mock", "live"], default="mock")
-    ap.add_argument("--suite", choices=["all", "routing", "retrieval"], default="all")
+    ap.add_argument("--suite", choices=["all", "routing", "retrieval", "cases"], default="all")
     ap.add_argument("--date", default=datetime.now(UTC).date().isoformat())
     ap.add_argument("--model", default=None, help="live routing model id override")
     ap.add_argument("--max-usd", type=float, default=5.0)
