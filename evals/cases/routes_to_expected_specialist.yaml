@@ -1,0 +1,6 @@
+id: knowledge-question-reaches-finrod
+check: routes_to_expected_specialist
+criterion: The request was handed to the specialist that owns it (knowledge questions go to finrod).
+message: What does the ARDA documentation say about the checkpointer?
+expect:
+  specialist: finrod

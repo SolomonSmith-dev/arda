@@ -1,0 +1,6 @@
+id: one-question-one-specialist-call
+check: tool_calls_under_limit
+criterion: The orchestrator used no more specialist calls than the task needed.
+message: What does the ARDA documentation say about Redis?
+expect:
+  max_tool_calls: 1

@@ -67,3 +67,20 @@ async def test_mock_retrieval_is_deterministic_and_matches_baseline():
 def test_live_mode_refuses_without_a_verified_price():
     with pytest.raises(SystemExit):
         harness.load_prices("claude-opus-5")
+
+
+def test_one_case_per_check():
+    cases = harness.load_cases()
+    assert len(cases) >= 3
+    checks = [c["check"] for c in cases]
+    assert len(set(checks)) == len(checks)
+    assert set(checks) <= set(harness.CHECKS)
+    for c in cases:
+        assert c["id"] and c["criterion"] and c["message"] and isinstance(c["expect"], dict)
+
+
+async def test_cases_score_mock_runs():
+    report = await harness.run_cases(MockAnthropicClient(), "mock", harness.load_cases())
+    by_check = {c["check"]: c["passed"] for c in report["per_case"]}
+    assert by_check["routes_to_expected_specialist"] and by_check["tool_calls_under_limit"]
+    assert report["n"] == len(by_check) and report["passed"] == sum(by_check.values())
