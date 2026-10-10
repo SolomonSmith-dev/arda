@@ -1,0 +1,25 @@
+id: T-002
+title: Store GitHub snapshots in Finrod (issue #68)
+owner: retrieval
+status: planned
+description: >
+  Second of four GitHub-audit tasks (#66, sub-issue #68). Turn a GitHubSnapshot from
+  T-001 into a Finrod document and ingest it in-process via
+  Finrod.run(AgentTask(type="ingest", ...)), using the instance the API lifespan
+  already holds. The plan's agents/finrod/ingest.py and finrod/state.py do not
+  exist; do not add a module-level singleton unless the in-process route provably fails.
+paths:
+  - agents/finrod/snapshots.py
+  - tests/finrod/test_github_snapshots.py
+depends_on: [T-001]
+acceptance:
+  - A snapshot ingested for one date is returned by a later Finrod query for that date, verified on the MockEmbedding path with no API keys
+  - Ingest goes through Finrod.run with an AgentTask; no HTTP self-call and no new module-level singleton
+  - Re-ingesting the same date's snapshot replaces it (stable doc_id) instead of duplicating it
+validation:
+  - "uv run pytest tests/finrod/ -q"
+  - "uv run ruff check ."
+  - "uv run mypy agents core"
+reviewers: [lead-engineer, qa]
+security_review: false
+blockers: []

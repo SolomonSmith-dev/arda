@@ -1,0 +1,8 @@
+# Test roster: stands in for a target repo's generated .agent/models.yaml.
+roles:
+  control: { model: claude-opus-5-5,   effort: high }
+  alpha:   { model: claude-sonnet-5-5, effort: high }
+  beta:    { model: claude-sonnet-5-5, effort: high }
+  gamma:   { model: claude-sonnet-5-5, effort: medium }
+  qa:      { model: claude-sonnet-5-5, effort: high }
+escalation: { model: claude-fable-5-1, effort: high }

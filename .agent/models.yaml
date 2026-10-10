@@ -1,0 +1,22 @@
+# Model and effort per Claude role, read by scripts/agent-start.sh and passed as
+# `claude --model <model> --effort <effort>`. Full model ids, not aliases, so a
+# new release never silently changes a role.
+#
+# Pricing checked 2026-10-09 (claude-api skill, cached 2026-10-06), USD per 1M tokens in/out:
+#   claude-fable-5-1  10.00 / 50.00
+#   claude-opus-5-5    4.00 / 20.00
+#   claude-sonnet-5-5  2.00 / 10.00
+roles:
+  control: { model: claude-opus-5-5, effort: high }
+  security: { model: claude-opus-5-5, effort: high }
+  orchestrator: { model: claude-sonnet-5-5, effort: high }
+  retrieval: { model: claude-sonnet-5-5, effort: high }
+  api: { model: claude-sonnet-5-5, effort: high }
+  filmclub: { model: claude-sonnet-5-5, effort: medium }
+  ops-agents: { model: claude-sonnet-5-5, effort: medium }
+  qa: { model: claude-sonnet-5-5, effort: high }
+  devops: { model: claude-sonnet-5-5, effort: medium }
+
+# Used by `agent-restart.sh <role> --escalate`. Only when a task has failed
+# review twice, or a bug survived one full debugging pass.
+escalation: { model: claude-fable-5-1, effort: high }

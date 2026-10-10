@@ -1,0 +1,28 @@
+id: T-003
+title: Sauron GitHub-audit tool and Claude narrative (issue #69)
+owner: orchestrator
+status: planned
+description: >
+  Third of four GitHub-audit tasks (#66, sub-issue #69). Add a GitHub-audit tool
+  definition in agents/sauron/tools.py so Claude selects it by tool_use, wire
+  tool_dispatch to the T-001 fetcher, and generate the narrative with Claude at the
+  specialist/retriever tier (not Opus, never Gemini). The plan's _CLASSIFIER_PROMPT
+  and Earendil post-processing do not exist in the LangGraph architecture.
+paths:
+  - agents/sauron/tools.py
+  - agents/sauron/graph.py
+  - agents/sauron/github_audit.py
+  - tests/sauron/test_github_audit.py
+depends_on: [T-001]
+acceptance:
+  - A natural-language request routes to the GitHub tool through the real StateGraph with MockAnthropicClient
+  - The snapshot and narrative sit inside result.result["specialist_result"]; the intent/specialist/specialist_result envelope is unchanged
+  - tests/test_e2e_sauron.py passes with no edits
+  - Narrative model comes from core/config.py tier routing, not a hard-coded model id
+validation:
+  - "uv run pytest tests/sauron/ tests/test_e2e_sauron.py -q"
+  - "uv run ruff check ."
+  - "uv run mypy agents core"
+reviewers: [lead-engineer, qa, security]
+security_review: true
+blockers: []

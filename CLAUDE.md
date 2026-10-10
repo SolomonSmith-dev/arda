@@ -18,7 +18,7 @@ Dependencies are managed with **uv** (Python 3.12). The default install is slim 
 - Run the API: `uv run uvicorn api.main:app` (lifespan registers all agents on `app.state`)
 - Heavy extras (real embeddings + Milvus): `uv sync --extra dev --extra full`
 
-CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a slim install for every PR and push to `main`. Keep both green.
+CI (`.github/workflows/checks.yml`) runs `scripts/run-checks.sh` (ruff, mypy, pytest, shellcheck, bats, task validation) on a slim install for every PR and push to `main`. Run the same script locally; keep it green.
 
 ## Architecture
 
@@ -47,3 +47,17 @@ CI (`.github/workflows/ci.yml`) runs `ruff check .` + `pytest tests/ -q` on a sl
 ## Git
 
 Develop on the branch designated for the session; commit with clear messages; open a PR only when asked. Don't push to `main` directly. Force-push only rebased feature branches, with `--force-with-lease`.
+
+<!-- agent-crew:begin -->
+## Multi-agent work (agent-crew)
+
+`AGENTS.md` is the source for the multi-agent workflow rules. Read it first.
+
+- **Started by `scripts/agent-start.sh`:** your first message names your role file,
+  task file and report path. Edit only the task's `paths`, in your own worktree.
+- **Control session (project-manager + lead-engineer):** you own `.agent/tasks/`,
+  `.agent/decisions/` and merges. Run `scripts/agent-tasks.sh` and
+  `scripts/agent-status.sh` before assigning work.
+- Done means `scripts/run-checks.sh` passes and the report is written. Paste the
+  failing output, not a summary of it.
+<!-- agent-crew:end -->

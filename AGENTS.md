@@ -142,3 +142,48 @@ deltas are open. Cloud VMs without Docker cannot close D5 either.
 ### Suggested first prompt for a successor agent
 
 > The deploy host is on `main` and healthy as of 2026-08-27; D4 is closed. Open work is in GitHub issues — #22 (D5/Milvus, likely blocked by the host CPU: read "The deploy host CPU is pre-2010" first) and the #66 epic (daily GitHub audit to Telegram, prerequisites already merged). Do not unpin `numpy<2`, reopen Groq/Gemini, or rename `mcp_server/`.
+
+<!-- agent-crew:begin -->
+## Multi-agent workflow
+
+Several Claude sessions can work in parallel, coordinated through `.agent/` and
+`scripts/`. Installed by the agent-crew plugin (upstream: dnd-clone@d25afa7).
+
+- **Roles** are defined in `.agent/roles/`; model and effort per role in `.agent/models.yaml`:
+  - `project-manager`: Turn goals into tasks with one owner, dependencies and acceptance criteria; track status, blockers and decisions.
+  - `lead-engineer`: Architecture, technical standards, integration, merge decisions; keeps ADRs and docs current.
+  - `orchestrator`: Sauron's LangGraph StateGraph and tool dispatch, plus the shared contract every agent depends on: BaseAgent, AgentTask/AgentResult, config, logging, clients and the Anthropic/LlamaIndex mocks.
+  - `retrieval`: Finrod: LlamaIndex RAG with injected LLM, embed model and vector store.
+  - `filmclub`: Tom Bombadil: Discord film-club chat, fact extraction, Letterboxd sync and Finrod-backed memory.
+  - `ops-agents`: Earendil (Redis shell queue + worker), Galadriel (cron) and Gwaihir (Telegram).
+  - `api`: FastAPI app (lifespan, routes, auth middleware, checkpointer choice) and the MCP server that calls it.
+  - `qa`: Cross-cutting tests (integration, e2e, smoke, conftest), bug reproduction, acceptance validation, regression runs; reviews test quality on domain tasks.
+  - `security`: Read-only reviewer: secrets, API-key auth, shell execution via Earendil, file paths, network calls, env vars, dependency changes, shell scripts.
+  - `devops`: Dev setup, build, CI, Docker, deploy-host scripts.
+  - `observer`: Not a model. The observer window runs scripts/agent-status.sh every 5 seconds so stalled panes are visible.
+  - `jev`: not a Claude session; `scripts/jev-check.sh` asks Jev whether a report's test evidence supports its status.
+- **Tasks** are `.agent/tasks/<ID>.yaml` (schema: `_template.yaml`, validated by
+  `scripts/task-validate.sh`). One owner per task. States: `planned`, `assigned`,
+  `in_progress`, `blocked`, `ready_for_review`, `changes_requested`, `verified`,
+  `complete`, `cancelled`.
+- **State is shared from the main checkout only.** Worktrees live in
+  `../arda-wt/<task-id>` on branch `agent/<task-id>`, created from
+  `origin/main` (`.agent/config.env`); never edit `.agent/state/` or another worktree.
+- **Edit only the files your task lists in `paths`.** Need another file? Stop and
+  say so in your report as a blocker.
+- **Never** `git add -A`, push, force-push, or stage `.claude/`, `.agent/state/`, `.agent/logs/`.
+- **Checks:** `scripts/run-checks.sh` (ruff, mypy, pytest, shellcheck, bats, tasks).
+- **Review:** control runs `scripts/jev-check.sh report <report>` first; a Jev error or unsure answer escalates to control, never passes. Then the task's reviewers.
+- **Report** when done, at the path you were given, using `.agent/reports/_template.md`.
+  Every field is required; write `none` rather than leaving one empty. Test results
+  must include the actual command output for anything that failed.
+
+### Architecture boundaries
+
+- Sauron's result envelope (`intent`/`specialist`/`specialist_result`) and `BaseAgent.run` are a stable contract for the API and e2e tests.
+- Mock-by-default: tests run with no API keys and no live services.
+- `numpy<2` stays pinned while the pre-2010 deploy host is in use.
+- Earendil is a regex/keyword executor, not an LLM planner.
+- The MCP package is `mcp_server/` (ADR 0006); Groq/Gemini are not reintroduced.
+- Never push to `main` directly.
+<!-- agent-crew:end -->

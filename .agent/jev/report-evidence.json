@@ -1,0 +1,16 @@
+{
+  "name": "report-evidence",
+  "description": "Does an agent report's test evidence support the status it claims?",
+  "model": "typesafe/jev-1.13",
+  "state_fields": ["status", "tests_run", "test_results"],
+  "display_fields": ["_id"],
+  "questions": {
+    "evidence": {
+      "type": "noul",
+      "instructions": "`status` is the task status the agent claims. Does `test_results` contain concrete evidence that supports it: pass/fail counts, command output, or quoted failure lines for the tests named in `tests_run`? A bare claim such as 'tests pass' or 'all good' with no counts or output means no. A claimed ready_for_review or complete status alongside reported failures means no."
+    }
+  },
+  "thresholds": {
+    "evidence": {"low": 0.3, "high": 0.8}
+  }
+}

@@ -1,0 +1,1 @@
+# Role: gamma (test fixture)

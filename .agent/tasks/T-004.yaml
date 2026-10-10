@@ -1,0 +1,29 @@
+id: T-004
+title: Daily GitHub-audit cron seed, Telegram delivery, e2e (issue #70)
+owner: ops-agents
+status: planned
+description: >
+  Last of four GitHub-audit tasks (#66, sub-issue #70). Seed a daily 8am PT job
+  idempotently from the API lifespan, mirroring ensure_letterboxd_sync_cron in
+  agents/tombombadil/sync_job.py (no seed in the worker: two seed paths race on
+  cron:job:* keys). The job fetches (T-001), stores (T-002), narrates (T-003) and
+  delivers via Gwaihir. Deploying to the host is operator work and out of scope.
+paths:
+  - agents/galadriel/github_audit_job.py
+  - agents/gwaihir/notifier.py
+  - api/main.py
+  - tests/galadriel/test_github_audit_job.py
+  - tests/integration/test_github_audit_e2e.py
+depends_on: [T-002, T-003]
+acceptance:
+  - The lifespan seeds cron:job:github_audit for 08:00 America/Los_Angeles, guarded by redis_up like the Letterboxd seed
+  - Running the seed twice leaves exactly one job
+  - An e2e test on fakeredis runs the job once and produces exactly one Gwaihir send to the allowlisted chat, with no API keys and no network
+  - No change to the Gwaihir chat allowlist behaviour
+validation:
+  - "uv run pytest tests/galadriel/ tests/integration/ tests/test_gwaihir_notifier.py -q"
+  - "uv run ruff check ."
+  - "uv run mypy agents core"
+reviewers: [lead-engineer, qa, security, api]
+security_review: true
+blockers: []

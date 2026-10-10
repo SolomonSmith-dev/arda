@@ -1,0 +1,12 @@
+id: T-900
+title: A valid task
+owner: qa
+status: assigned
+description: Fixture.
+paths: [tests/test_dice.py]
+depends_on: []
+acceptance: [it passes]
+validation: [uv run pytest -q tests/test_dice.py]
+reviewers: [lead-engineer]
+security_review: false
+blockers: []

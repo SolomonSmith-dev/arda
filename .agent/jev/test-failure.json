@@ -1,0 +1,23 @@
+{
+  "name": "test-failure",
+  "description": "Label a failing test run so the control session knows where to look first.",
+  "model": "typesafe/jev-1.13",
+  "state_fields": ["output"],
+  "display_fields": ["_id"],
+  "questions": {
+    "cause": {
+      "type": "choice",
+      "instructions": "`output` is the tail of a failing pytest or bats run. Which best describes the most likely cause?",
+      "criteria": {
+        "flaky": "The failure depends on chance or timing: random rolls, ordering, sleeps, or it is reported as intermittent.",
+        "environment": "Missing tool, wrong path, missing dependency, permission or network error; the code under test never really ran.",
+        "regression": "An assertion about game or script behavior fails because the code under test now behaves differently.",
+        "test-bug": "The test itself is wrong: bad fixture, invalid input it builds, or an assertion that contradicts the documented behavior."
+      },
+      "exhaustive": true
+    }
+  },
+  "thresholds": {
+    "cause": 0.7
+  }
+}

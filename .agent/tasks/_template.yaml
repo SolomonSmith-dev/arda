@@ -1,0 +1,20 @@
+# Copy to <ID>.yaml (filename must equal id). Validate: scripts/task-validate.sh <file>
+id: T-000
+title: Short imperative title
+owner: qa              # a file name in .agent/roles/ without .md
+status: planned        # planned | assigned | in_progress | blocked | ready_for_review |
+                       # changes_requested | verified | complete | cancelled
+description: >
+  What and why, in two or three sentences.
+paths:                 # every file or directory the owner may edit; locks use these
+  - tests/example
+depends_on: []         # task ids that must be complete first
+acceptance:
+  - Observable condition that proves this is done
+validation:
+  - "uv run ruff check ."
+reviewers: [lead-engineer]
+security_review: false # true when touching file I/O, network, parsing untrusted input, env vars, deps or scripts
+blockers: []
+# model: claude-opus-5-5   # optional: override the role's model (.agent/models.yaml) for a risky task
+# effort: high            # optional: override the role's effort

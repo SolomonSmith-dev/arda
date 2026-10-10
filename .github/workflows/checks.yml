@@ -1,0 +1,32 @@
+name: checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.12"
+      - name: Install shell tooling
+        run: sudo apt-get update -q && sudo apt-get install -y -q tmux bats
+      - name: Install shellcheck 0.11.0 (same version as local dev)
+        run: |
+          curl -fsSL https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz | tar -xJ
+          sudo install shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+      - name: Tool versions
+        run: tmux -V && shellcheck --version | sed -n 2p && bats --version && yq --version && jq --version
+      - name: Install dependencies
+        run: "uv sync --frozen --extra dev"
+      - name: Run checks
+        run: scripts/run-checks.sh

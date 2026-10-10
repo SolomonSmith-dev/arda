@@ -1,0 +1,26 @@
+id: T-001
+title: GitHub fetch tool and GitHubSnapshot model (issue #67)
+owner: ops-agents
+status: planned
+description: >
+  First of four tasks for the daily GitHub audit (epic #66, sub-issue #67). Add
+  agents/earendil/tools/github.py with a GitHubSnapshot dataclass and
+  fetch_activity(username, token) that pulls commits, PRs and contribution streak
+  over httpx. Plan Task 1 in docs/superpowers/plans/2026-05-20-phase-2-github-audit.md
+  still applies; ignore its Gemini references (ADR 0006).
+paths:
+  - agents/earendil/tools/
+  - tests/earendil/test_github_tool.py
+depends_on: []
+acceptance:
+  - fetch_activity returns a populated GitHubSnapshot against an httpx.MockTransport
+  - 401, 403 and rate-limit responses raise one documented error type, never a raw httpx exception, and never return a partial snapshot
+  - Tests pass with GITHUB_TOKEN unset and make no network calls (pattern in tests/test_gwaihir_bot.py)
+  - No new dependencies (httpx is already one)
+validation:
+  - "uv run pytest tests/earendil/ -q"
+  - "uv run ruff check ."
+  - "uv run mypy agents core"
+reviewers: [lead-engineer, qa, security]
+security_review: true
+blockers: []
