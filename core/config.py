@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     # Discord round-trip.
     specialist_model: str = "claude-haiku-4-5-20251001"
 
+    # Judge layer (core/judge.py). Off by default and always skipped in mock mode,
+    # so dev runs cost nothing. judge_base_url points the client at a LiteLLM proxy
+    # (litellm/config.yaml); with it set, use JUDGE_MODEL=arda-judge.
+    judge_enabled: bool = False
+    judge_model: str = "claude-haiku-5-5"
+    judge_base_url: str = ""
+    lessons_path: str = "memory/lessons.md"
+
     # Sauron LangGraph checkpointer (SQLite path; relative to cwd)
     checkpointer_db_path: str = ".arda/checkpoints.sqlite"
 

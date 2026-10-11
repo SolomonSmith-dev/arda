@@ -1,0 +1,8 @@
+# LiteLLM proxy model aliases for ARDA. Not started by docker-compose yet: the gateway
+# itself is a separate task. Point ARDA at it with JUDGE_BASE_URL=<proxy url> and
+# JUDGE_MODEL=arda-judge; without a proxy, core/judge.py calls Anthropic directly.
+model_list:
+  - model_name: arda-judge
+    litellm_params:
+      model: anthropic/claude-haiku-5-5
+      api_key: os.environ/ANTHROPIC_API_KEY

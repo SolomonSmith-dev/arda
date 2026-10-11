@@ -27,6 +27,7 @@ GOLD_PATH = ROOT / "routing" / "gold.jsonl"
 QUERIES_PATH = ROOT / "retrieval" / "queries.jsonl"
 CORPUS_DIR = ROOT / "retrieval" / "corpus"
 PRICING_PATH = ROOT / "pricing.json"
+CASES_DIR = ROOT / "cases"
 SPECIALISTS = ("earendil", "finrod", "tombombadil")
 LABELS = (*SPECIALISTS, "none")
 
@@ -324,6 +325,61 @@ async def run_retrieval(
     }
 
 
+# ----------------------------------------------------------------------- cases
+#
+# One YAML file per judge check (see core/judge.py). Each case names the check, the
+# criterion text the live judge is given, a message for Sauron, and what to expect.
+# In mock mode the judge is skipped, so each check is scored by the deterministic
+# predicate below against a real (mock-routed) Sauron run with recording stubs.
+
+
+def load_cases() -> list[dict[str, Any]]:
+    import yaml
+
+    return [yaml.safe_load(p.read_text()) for p in sorted(CASES_DIR.glob("*.yaml"))]
+
+
+def _routes_to_expected(env: dict[str, Any], calls: list[str], expect: dict[str, Any]) -> bool:
+    return env.get("specialist") == expect["specialist"]
+
+
+def _no_forbidden_tools(env: dict[str, Any], calls: list[str], expect: dict[str, Any]) -> bool:
+    return not set(calls) & set(expect["forbidden_tools"])
+
+
+def _tool_calls_under(env: dict[str, Any], calls: list[str], expect: dict[str, Any]) -> bool:
+    return len(calls) <= expect["max_tool_calls"]
+
+
+CHECKS: dict[str, Callable[[dict[str, Any], list[str], dict[str, Any]], bool]] = {
+    "routes_to_expected_specialist": _routes_to_expected,
+    "no_shell_on_injection": _no_forbidden_tools,
+    "tool_calls_under_limit": _tool_calls_under,
+}
+
+
+async def run_cases(client: Any, model: str, cases: list[dict[str, Any]]) -> dict[str, Any]:
+    recorder = _Recorder()
+    specialists: dict[Any, BaseAgent] = {s: RecordingSpecialist(s, recorder) for s in SPECIALISTS}
+    sauron = Sauron(
+        specialists=specialists, client=client, checkpointer=MemorySaver(), model=model
+    )
+    per_case = []
+    for case in cases:
+        recorder.calls.clear()
+        res = await sauron.run(
+            AgentTask(agent="sauron", type="orchestrate", payload={"message": case["message"]})
+        )
+        ok = CHECKS[case["check"]](res.result or {}, list(recorder.calls), case["expect"])
+        per_case.append({"id": case["id"], "check": case["check"], "passed": ok})
+    return {
+        "n": len(per_case),
+        "passed": sum(c["passed"] for c in per_case),
+        "failed_ids": [c["id"] for c in per_case if not c["passed"]],
+        "per_case": per_case,
+    }
+
+
 # ---------------------------------------------------------------------- report
 
 VOLATILE = ("date", "git_sha", "latency_ms", "python")
@@ -393,6 +449,17 @@ def render_markdown(report: dict[str, Any]) -> str:
         if f:
             out += [f"Chance floor (`{f['embedder']}`, text-hash vectors with no similarity "
                     f"structure): Recall@5 {pct(f['recall_at_5'])}, MRR@10 {f['mrr_at_10']:.3f}.", ""]
+    c = report.get("cases")
+    if c:
+        out += [
+            "## Judge cases", "",
+            f"{c['passed']} of {c['n']} passed. One case per check in `evals/cases/`; in mock "
+            "mode each is scored by a deterministic predicate, not the judge model.", "",
+            "| Case | Check | Result |", "|---|---|---|",
+        ]
+        out += [f"| {p['id']} | {p['check']} | {'pass' if p['passed'] else 'FAIL'} |"
+                for p in c["per_case"]]
+        out.append("")
     return "\n".join(out) + "\n"
 
 
