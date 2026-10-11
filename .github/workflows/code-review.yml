@@ -1,0 +1,19 @@
+name: AI code review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: alibaba/open-code-review@main
+        with:
+          llm_url: https://api.anthropic.com
+          llm_auth_token: ${{ secrets.ANTHROPIC_API_KEY }}
+          llm_model: claude-haiku-5-5
+          llm_use_anthropic: 'true'
+          sticky_summary: 'true'
+          incremental: 'true'
