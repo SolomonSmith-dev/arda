@@ -5,11 +5,15 @@ on:
 permissions:
   contents: read
   pull-requests: write
+concurrency:
+  group: code-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: alibaba/open-code-review@main
+      - uses: alibaba/open-code-review@357c3f09a264563ab64d8f4fc3b25b186cd3c4a4 # main 2026-10-10
         with:
           llm_url: https://api.anthropic.com
           llm_auth_token: ${{ secrets.ANTHROPIC_API_KEY }}
