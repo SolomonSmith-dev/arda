@@ -111,6 +111,25 @@ async def test_snapshot_is_recallable_from_finrod_afterwards(finrod):
 
 
 @pytest.mark.asyncio
+async def test_snapshot_survives_a_finrod_restart(tmp_path):
+    def build() -> Finrod:
+        return Finrod(llm=MockLLM(max_tokens=32), embed_model=HashEmbedding(), persist_dir=tmp_path)
+
+    await _rumil(build(), _Fetcher(_snapshot())).run(_task())
+    reloaded = build()
+    answer = await reloaded.run(
+        AgentTask(agent="finrod", type="query", payload={"question": "what did I ship in arda"})
+    )
+    doc_ids = {s["metadata"]["doc_id"] for s in answer.result["sources"]}
+    assert "github-audit:SolomonSmith-dev:2026-09-26" in doc_ids
+
+    # A re-run after the restart still replaces the day's snapshot instead of duplicating it.
+    before = reloaded.node_count()
+    await _rumil(reloaded, _Fetcher(_snapshot())).run(_task())
+    assert reloaded.node_count() == before
+
+
+@pytest.mark.asyncio
 async def test_rerunning_the_same_day_replaces_the_snapshot(finrod):
     rumil = _rumil(finrod, _Fetcher(_snapshot()))
     await rumil.run(_task())
