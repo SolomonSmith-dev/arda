@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -100,6 +101,9 @@ class Settings(BaseSettings):
     # Earendil runs only allowlisted commands (core/shell_policy.py). Set true on a
     # private, trusted host to run any command, as before the allowlist existed.
     earendil_allow_any_command: bool = False
+    # Comma-separated absolute directories that `ls <path>` / `ls -la <path>` may list.
+    # Empty (the default) allows no path form at all.
+    earendil_ls_roots: str = ""
 
     # Public demo mode. Disables every path to shell execution, serves the web
     # page at /, and rate-limits it. Off by default; see docs/deploy-demo.md.
@@ -127,6 +131,12 @@ class Settings(BaseSettings):
             if part:
                 ids.add(int(part))
         return frozenset(ids)
+
+    @property
+    def earendil_ls_root_paths(self) -> tuple[Path, ...]:
+        """Resolved absolute roots from EARENDIL_LS_ROOTS; relative entries are ignored."""
+        parts = (p.strip() for p in self.earendil_ls_roots.split(","))
+        return tuple(Path(p).resolve() for p in parts if p.startswith("/"))
 
     @property
     def mock_embedder_enabled(self) -> bool:

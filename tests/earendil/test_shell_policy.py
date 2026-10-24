@@ -126,6 +126,70 @@ def test_escape_hatch_restores_old_behaviour(monkeypatch):
     assert worker.execute_system_task({"command": "printf done"})["result"] == "done"
 
 
+# -- ls <path> under EARENDIL_LS_ROOTS -----------------------------------
+
+
+@pytest.fixture
+def ls_root(tmp_path, monkeypatch):
+    root = (tmp_path / "root").resolve()
+    (root / "sub").mkdir(parents=True)
+    (tmp_path / "root-sibling").mkdir()
+    (tmp_path / "secret").mkdir()
+    (root / "escape").symlink_to(tmp_path / "secret")
+    monkeypatch.setattr(settings, "earendil_ls_roots", f"{root}, relative/ignored")
+    return root
+
+
+def test_ls_path_is_refused_when_no_roots_are_set(tmp_path):
+    with pytest.raises(CommandNotAllowedError):
+        check_command(f"ls -la {tmp_path}")
+
+
+@pytest.mark.parametrize("form", ["ls", "ls -la"])
+@pytest.mark.parametrize("rel", ["", "/sub", "/sub/"])
+def test_ls_path_inside_a_root_is_allowed(ls_root, form, rel):
+    cmd = f"{form} {ls_root}{rel}"
+    assert check_command(cmd) == cmd
+    assert argv_for(cmd) == [*form.split(), str(ls_root) + rel.rstrip("/")]
+
+
+@pytest.mark.parametrize(
+    "tail",
+    [
+        "/..",  # parent of the root
+        "/sub/../..",  # climbs out through a subdir
+        "/sub/..",  # stays inside, still refused: no `..` at all
+        "-sibling",  # prefix match is not containment
+        "/escape",  # symlink that points outside
+        " /etc",  # two paths
+    ],
+)
+def test_ls_path_escapes_are_refused(ls_root, tail):
+    with pytest.raises(CommandNotAllowedError):
+        check_command(f"ls {ls_root}{tail}")
+
+
+@pytest.mark.parametrize(
+    "cmd", ["ls /etc", "ls -la /", "ls sub", "ls ./sub", "ls -R {root}", "ls -la -R {root}",
+            "cat {root}", "ls '{root}'"],
+)
+def test_ls_other_shapes_are_refused(ls_root, cmd):
+    with pytest.raises(CommandNotAllowedError):
+        check_command(cmd.format(root=ls_root))
+
+
+def test_ls_path_runs_resolved_and_without_a_shell(ls_root, monkeypatch):
+    seen = {}
+
+    def fake(argv, **kw):
+        seen["argv"], seen["shell"] = argv, kw.get("shell")
+        return "sub\n"
+
+    monkeypatch.setattr(worker.subprocess, "check_output", fake)
+    assert worker.execute_system_task({"command": f"ls  -la {ls_root}/sub/"})["result"] == "sub"
+    assert seen == {"argv": ["ls", "-la", str(ls_root / "sub")], "shell": False}
+
+
 # -- API ---------------------------------------------------------------
 
 
