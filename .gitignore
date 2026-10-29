@@ -54,3 +54,6 @@ redis_data/
 /~/
 .claude/
 .env.demo
+
+# agent-team runtime state (run record, worktrees, lock file)
+.agent-team/
