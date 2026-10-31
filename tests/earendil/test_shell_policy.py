@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from unittest.mock import Mock
 
 import fakeredis
 import pytest
@@ -188,6 +189,54 @@ def test_ls_path_runs_resolved_and_without_a_shell(ls_root, monkeypatch):
     monkeypatch.setattr(worker.subprocess, "check_output", fake)
     assert worker.execute_system_task({"command": f"ls  -la {ls_root}/sub/"})["result"] == "sub"
     assert seen == {"argv": ["ls", "-la", str(ls_root / "sub")], "shell": False}
+
+
+@pytest.mark.parametrize("form", ["ls", "ls -la"])
+def test_worker_refuses_symlink_retargeted_after_validation(
+    ls_root, fake_redis, monkeypatch, form
+):
+    monkeypatch.setattr(settings, "earendil_allow_any_command", False)
+    link = ls_root / "link;id"
+    link.symlink_to(ls_root / "sub")
+
+    def check_then_retarget(command):
+        validated = check_command(command)
+        link.unlink()
+        link.symlink_to(ls_root.parent / "secret")
+        return validated
+
+    subprocess = Mock(return_value="should not run")
+    monkeypatch.setattr(worker, "check_command", check_then_retarget)
+    monkeypatch.setattr(worker.subprocess, "check_output", subprocess)
+    worker.process_task(fake_redis, {
+        "task_id": "symlink-race",
+        "type": "system",
+        "action": "run_command",
+        "payload": {"command": f"{form} {link}"},
+    })
+    subprocess.assert_not_called()
+    result = json.loads(fake_redis.get(task_result_key("symlink-race")))
+    assert result["status"] == TaskStatus.FAILED
+    assert "allowlist" in result["error"]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_shell_execution_requires_explicit_escape_hatch(monkeypatch, enabled):
+    monkeypatch.setattr(settings, "earendil_allow_any_command", enabled)
+    subprocess = Mock(return_value="ok")
+    monkeypatch.setattr(worker.subprocess, "check_output", subprocess)
+    command = "echo hello; id"
+    if enabled:
+        assert argv_for(command) is None
+        worker.execute_system_task({"command": command})
+        assert subprocess.call_args.args == (command,)
+        assert subprocess.call_args.kwargs["shell"] is True
+    else:
+        with pytest.raises(CommandNotAllowedError):
+            argv_for(command)
+        with pytest.raises(CommandNotAllowedError):
+            worker.execute_system_task({"command": command})
+        subprocess.assert_not_called()
 
 
 # -- API ---------------------------------------------------------------

@@ -77,7 +77,11 @@ def check_command(command: str) -> str:
 def argv_for(command: str) -> list[str] | None:
     """argv for an allowlisted command, or None when the escape hatch is the only reason it runs."""
     norm = normalize(command)
-    return shlex.split(norm) if norm in ALLOWED_COMMANDS else _ls_path_argv(norm)
+    argv = shlex.split(norm) if norm in ALLOWED_COMMANDS else _ls_path_argv(norm)
+    if argv is None and not settings.earendil_allow_any_command:
+        shown = norm[:_MAX_ECHO] + ("..." if len(norm) > _MAX_ECHO else "")
+        raise CommandNotAllowedError(f"refused: command not in the Earendil allowlist: {shown!r}")
+    return argv
 
 
 def check_task(task: dict[str, Any]) -> None:
