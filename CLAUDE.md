@@ -55,3 +55,24 @@ Agent work follows `factory/AGENTS.md`: backlog row, own worktree (`factory/new-
 ## Git
 
 Develop on the branch designated for the session; commit with clear messages; open a PR only when asked. Don't push to `main` directly. Force-push only rebased feature branches, with `--force-with-lease`.
+
+<!-- agent-team:begin -->
+## agent-team
+
+Managed by `agent-team configure` from `.agent-team/proposal.yaml`. Edit the proposal and re-run
+`agent-team configure` instead of editing this block; text outside it is never changed.
+
+- Default branch `main`; protected branches: unknown.
+- Never push to the default branch or a protected branch: work on a branch and leave it for a human; do not open pull requests.
+- Autonomy ceiling A3.
+- `.agent-team/` holds agent-team runtime state and is gitignored; never commit it.
+- Never read, print or commit secrets (`.env*`, key files).
+- Commands (tool found by `agent-team init`; nothing was run to check them):
+  - build: `uv build`
+  - test: `uv run pytest`
+  - lint: `uv run ruff check .`
+<!-- agent-team:end -->
+
+## ICM / Graphify
+
+When `graphify-out/graph.json` exists, answer codebase questions with `graphify query "<q>"` (also `path` / `explain`) before grep or explore agents. Rebuild with `graphify update` after large structural changes. Dual Develop: Hermes-first product build; Cursor for git/PR/evals/parallel. No secrets in commits or docs. Ops spine: `~/Projects/personal-tech-ops`.
