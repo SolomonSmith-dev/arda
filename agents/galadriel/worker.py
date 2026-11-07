@@ -185,6 +185,10 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
         delivery_errors = announce(job, result)
         if delivery_errors:
             result["errors"] = [*(result.get("errors") or []), *delivery_errors]
+            # These are the success words this worker writes. Any other status
+            # already names a bad run, so a send error leaves it alone.
+            if result.get("status") in (None, "ok", "completed", "logged"):
+                result["status"] = "error"
         duration_ms = int((time.monotonic() - started) * 1000)
         # A handler that reports failure in its result rather than raising --
         # run_sync returns a populated `errors` list instead of throwing --
