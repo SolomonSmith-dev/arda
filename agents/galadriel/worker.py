@@ -8,7 +8,6 @@ Started as a separate compose service: ``python -m agents.galadriel.worker``.
 
 from __future__ import annotations
 
-import re
 import time
 
 import httpx
@@ -16,6 +15,7 @@ import httpx
 from agents.galadriel.models import Job
 from agents.galadriel.scheduler import Schedule, is_one_shot, next_run_ms
 from agents.galadriel.store import delete_job, pop_due, save_job
+from agents.gwaihir.notifier import safe_exc_text
 from core.config import settings
 from core.logging import get_logger
 from core.redis_client import get_redis_sync
@@ -25,16 +25,6 @@ log = get_logger("agents.galadriel.worker")
 POLL_INTERVAL_SECONDS = 5
 ERROR_BACKOFF_SECONDS = 10
 EXEC_TIMEOUT_BUFFER_SECONDS = 5
-_BOT_TOKEN_IN_URL = re.compile(r"/bot[^/\s]+/")
-
-
-def _safe_exc_text(exc: BaseException) -> str:
-    """Strip Telegram bot tokens from exception text before log or store."""
-    msg = str(exc)
-    token = settings.telegram_bot_token
-    if token:
-        msg = msg.replace(token, "<redacted>")
-    return _BOT_TOKEN_IN_URL.sub("/bot<redacted>/", msg)
 
 
 def execute_agent_turn(client: httpx.Client, job: Job) -> dict:
@@ -113,9 +103,9 @@ def announce(job: Job, result: dict) -> list[str]:
                 job_id=job.id,
                 to=job.delivery.to,
             )
-            return [_safe_exc_text(e)]
+            return [safe_exc_text(e)]
         except Exception as e:
-            safe = _safe_exc_text(e)
+            safe = safe_exc_text(e)
             log.error(
                 "telegram_delivery_failed",
                 job_id=job.id,
@@ -132,7 +122,7 @@ def announce(job: Job, result: dict) -> list[str]:
         try:
             publish(job.delivery.to, text)
         except Exception as e:
-            safe = _safe_exc_text(e)
+            safe = safe_exc_text(e)
             log.error(
                 "discord_delivery_failed",
                 job_id=job.id,

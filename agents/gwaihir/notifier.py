@@ -7,6 +7,7 @@ Pure ``sendMessage`` wrapper. The bot uses it for replies; Galadriel's
 from __future__ import annotations
 
 import logging
+import re
 
 import httpx
 
@@ -17,10 +18,20 @@ log = get_logger("agents.gwaihir.notifier")
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 SEND_TIMEOUT_SECONDS = 10
+_BOT_TOKEN_IN_URL = re.compile(r"/bot[^/\s]+/")
 
 
 class TelegramNotConfiguredError(RuntimeError):
     """Raised when send_message is called without TELEGRAM_BOT_TOKEN set."""
+
+
+def safe_exc_text(exc: BaseException) -> str:
+    """Strip Telegram bot tokens from exception text before log or store."""
+    msg = str(exc)
+    token = settings.telegram_bot_token
+    if token:
+        msg = msg.replace(token, "<redacted>")
+    return _BOT_TOKEN_IN_URL.sub("/bot<redacted>/", msg)
 
 
 def _api_url(token: str, method: str) -> str:

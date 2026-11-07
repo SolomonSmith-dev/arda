@@ -18,7 +18,7 @@ from typing import Any
 
 import httpx
 
-from agents.gwaihir.notifier import send_message
+from agents.gwaihir.notifier import safe_exc_text, send_message
 from core.config import settings
 from core.logging import get_logger, new_trace_id
 
@@ -171,13 +171,13 @@ def _handle_update(
         else:
             reply = _execute(api_client, text)
     except Exception as e:
-        log.error("execute_failed", chat_id=chat_id, exc=str(e))
+        log.error("execute_failed", chat_id=chat_id, exc=safe_exc_text(e))
         reply = f"agent error: {e}"
 
     try:
         send_message(chat_id, reply, client=telegram_client, token=token)
     except Exception as e:
-        log.error("telegram_send_failed", chat_id=chat_id, exc=str(e))
+        log.error("telegram_send_failed", chat_id=chat_id, exc=safe_exc_text(e))
 
 
 def run_forever() -> None:
@@ -206,7 +206,7 @@ def run_forever() -> None:
                         last_update_id or 0, update.get("update_id", 0) + 1
                     )
             except Exception as e:
-                log.error("gwaihir_loop_error", exc=str(e))
+                log.error("gwaihir_loop_error", exc=safe_exc_text(e))
                 time.sleep(ERROR_BACKOFF_SECONDS)
 
 
