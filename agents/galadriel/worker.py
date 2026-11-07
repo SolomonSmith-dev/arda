@@ -15,6 +15,7 @@ import httpx
 from agents.galadriel.models import Job
 from agents.galadriel.scheduler import Schedule, is_one_shot, next_run_ms
 from agents.galadriel.store import delete_job, pop_due, save_job
+from agents.gwaihir.notifier import safe_exc_text
 from core.config import settings
 from core.logging import get_logger
 from core.redis_client import get_redis_sync
@@ -72,15 +73,14 @@ def _format_announcement(job: Job, result: dict) -> str:
     return f"[{job.name}] {body}".strip()
 
 
-def announce(job: Job, result: dict) -> None:
-    """Deliver a job's result via the configured transport.
+def announce(job: Job, result: dict) -> list[str]:
+    """Deliver a job's result and return send errors.
 
-    - ``mode="announce"`` -> structured log only (legacy / dev).
-    - ``mode="telegram"`` -> outbound Telegram sendMessage.
-    - ``mode="none"`` or missing ``to`` -> no-op.
+    ``mode="announce"`` logs only. ``mode="none"`` or a missing ``to`` does
+    nothing. A send failure is returned, not raised.
     """
     if not job.delivery.to or job.delivery.mode == "none":
-        return
+        return []
 
     if job.delivery.mode == "announce":
         log.info(
@@ -89,7 +89,7 @@ def announce(job: Job, result: dict) -> None:
             to=job.delivery.to,
             result_status=result.get("status"),
         )
-        return
+        return []
 
     if job.delivery.mode == "telegram":
         from agents.gwaihir.notifier import TelegramNotConfiguredError, send_message
@@ -97,19 +97,23 @@ def announce(job: Job, result: dict) -> None:
         text = _format_announcement(job, result)
         try:
             send_message(job.delivery.to, text)
-        except TelegramNotConfiguredError:
+        except TelegramNotConfiguredError as e:
             log.warning(
                 "telegram_not_configured",
                 job_id=job.id,
                 to=job.delivery.to,
             )
+            return [safe_exc_text(e)]
         except Exception as e:
+            safe = safe_exc_text(e)
             log.error(
                 "telegram_delivery_failed",
                 job_id=job.id,
                 to=job.delivery.to,
-                exc=str(e),
+                exc=safe,
             )
+            return [safe]
+        return []
 
     if job.delivery.mode == "discord":
         from agents.tombombadil.delivery import publish
@@ -118,12 +122,17 @@ def announce(job: Job, result: dict) -> None:
         try:
             publish(job.delivery.to, text)
         except Exception as e:
+            safe = safe_exc_text(e)
             log.error(
                 "discord_delivery_failed",
                 job_id=job.id,
                 to=job.delivery.to,
-                exc=str(e),
+                exc=safe,
             )
+            return [safe]
+        return []
+
+    return []
 
 
 def reschedule(redis, job: Job) -> None:
@@ -176,7 +185,13 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
             result = {"status": "logged", "text": job.payload.text}
             log.info("system_event", job_id=job.id, text=job.payload.text)
 
-        announce(job, result)
+        delivery_errors = announce(job, result)
+        if delivery_errors:
+            result["errors"] = [*(result.get("errors") or []), *delivery_errors]
+            # These are the success words this worker writes. Any other status
+            # already names a bad run, so a send error leaves it alone.
+            if result.get("status") in (None, "ok", "completed", "logged"):
+                result["status"] = "error"
         duration_ms = int((time.monotonic() - started) * 1000)
         # A handler that reports failure in its result rather than raising --
         # run_sync returns a populated `errors` list instead of throwing --

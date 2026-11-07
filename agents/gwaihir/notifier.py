@@ -6,6 +6,9 @@ Pure ``sendMessage`` wrapper. The bot uses it for replies; Galadriel's
 
 from __future__ import annotations
 
+import logging
+import re
+
 import httpx
 
 from core.config import settings
@@ -15,10 +18,20 @@ log = get_logger("agents.gwaihir.notifier")
 
 TELEGRAM_API_BASE = "https://api.telegram.org"
 SEND_TIMEOUT_SECONDS = 10
+_BOT_TOKEN_IN_URL = re.compile(r"/bot[^/\s]+/")
 
 
 class TelegramNotConfiguredError(RuntimeError):
     """Raised when send_message is called without TELEGRAM_BOT_TOKEN set."""
+
+
+def safe_exc_text(exc: BaseException) -> str:
+    """Strip Telegram bot tokens from exception text before log or store."""
+    msg = str(exc)
+    token = settings.telegram_bot_token
+    if token:
+        msg = msg.replace(token, "<redacted>")
+    return _BOT_TOKEN_IN_URL.sub("/bot<redacted>/", msg)
 
 
 def _api_url(token: str, method: str) -> str:
@@ -49,6 +62,10 @@ def send_message(
     owns_client = client is None
     if client is None:
         client = httpx.Client(timeout=SEND_TIMEOUT_SECONDS)
+    # httpx logs the full request URL at INFO, which embeds the bot token.
+    httpx_log = logging.getLogger("httpx")
+    prev_httpx_level = httpx_log.level
+    httpx_log.setLevel(logging.WARNING)
     try:
         resp = client.post(url, json=payload)
         resp.raise_for_status()
@@ -61,5 +78,6 @@ def send_message(
         )
         return body
     finally:
+        httpx_log.setLevel(prev_httpx_level)
         if owns_client:
             client.close()
