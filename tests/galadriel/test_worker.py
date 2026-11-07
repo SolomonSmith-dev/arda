@@ -181,6 +181,27 @@ def test_announce_telegram_returns_send_errors(monkeypatch):
     assert announce(job, {"status": "ok"}) == ["network down"]
 
 
+def test_announce_telegram_redacts_bot_token_from_errors(monkeypatch):
+    from core.config import settings
+
+    token = "123456:AA-secret-bot-token"
+    monkeypatch.setattr(settings, "telegram_bot_token", token)
+    job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
+
+    def boom(*a, **kw):
+        raise RuntimeError(
+            "Client error '400 Bad Request' for url "
+            f"'https://api.telegram.org/bot{token}/sendMessage'"
+        )
+
+    monkeypatch.setattr("agents.gwaihir.notifier.send_message", boom)
+
+    errors = announce(job, {"status": "ok"})
+    assert len(errors) == 1
+    assert token not in errors[0]
+    assert "/bot<redacted>/" in errors[0]
+
+
 def test_announce_telegram_returns_not_configured(monkeypatch):
     from agents.gwaihir.notifier import TelegramNotConfiguredError
 

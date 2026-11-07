@@ -8,6 +8,7 @@ Started as a separate compose service: ``python -m agents.galadriel.worker``.
 
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
@@ -24,6 +25,16 @@ log = get_logger("agents.galadriel.worker")
 POLL_INTERVAL_SECONDS = 5
 ERROR_BACKOFF_SECONDS = 10
 EXEC_TIMEOUT_BUFFER_SECONDS = 5
+_BOT_TOKEN_IN_URL = re.compile(r"/bot[^/\s]+/")
+
+
+def _safe_exc_text(exc: BaseException) -> str:
+    """Strip Telegram bot tokens from exception text before log or store."""
+    msg = str(exc)
+    token = settings.telegram_bot_token
+    if token:
+        msg = msg.replace(token, "<redacted>")
+    return _BOT_TOKEN_IN_URL.sub("/bot<redacted>/", msg)
 
 
 def execute_agent_turn(client: httpx.Client, job: Job) -> dict:
@@ -102,15 +113,16 @@ def announce(job: Job, result: dict) -> list[str]:
                 job_id=job.id,
                 to=job.delivery.to,
             )
-            return [str(e)]
+            return [_safe_exc_text(e)]
         except Exception as e:
+            safe = _safe_exc_text(e)
             log.error(
                 "telegram_delivery_failed",
                 job_id=job.id,
                 to=job.delivery.to,
-                exc=str(e),
+                exc=safe,
             )
-            return [str(e)]
+            return [safe]
         return []
 
     if job.delivery.mode == "discord":
@@ -120,13 +132,14 @@ def announce(job: Job, result: dict) -> list[str]:
         try:
             publish(job.delivery.to, text)
         except Exception as e:
+            safe = _safe_exc_text(e)
             log.error(
                 "discord_delivery_failed",
                 job_id=job.id,
                 to=job.delivery.to,
-                exc=str(e),
+                exc=safe,
             )
-            return [str(e)]
+            return [safe]
         return []
 
     return []
