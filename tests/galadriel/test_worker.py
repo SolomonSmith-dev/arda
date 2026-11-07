@@ -161,15 +161,16 @@ def test_announce_telegram_invokes_notifier(monkeypatch):
 
     monkeypatch.setattr("agents.gwaihir.notifier.send_message", fake_send)
 
-    announce(job, {"status": "completed", "result": {"reply": "all clear"}})
+    errors = announce(job, {"status": "completed", "result": {"reply": "all clear"}})
 
+    assert errors == []
     assert len(calls) == 1
     assert calls[0]["chat_id"] == "42"
     assert "morning-check" in calls[0]["text"]
     assert "all clear" in calls[0]["text"]
 
 
-def test_announce_telegram_swallows_send_errors(monkeypatch):
+def test_announce_telegram_returns_send_errors(monkeypatch):
     job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
 
     def boom(*a, **kw):
@@ -177,11 +178,10 @@ def test_announce_telegram_swallows_send_errors(monkeypatch):
 
     monkeypatch.setattr("agents.gwaihir.notifier.send_message", boom)
 
-    # Must not raise — delivery failure is logged, not propagated.
-    announce(job, {"status": "ok"})
+    assert announce(job, {"status": "ok"}) == ["network down"]
 
 
-def test_announce_telegram_swallows_not_configured(monkeypatch):
+def test_announce_telegram_returns_not_configured(monkeypatch):
     from agents.gwaihir.notifier import TelegramNotConfiguredError
 
     job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
@@ -191,7 +191,84 @@ def test_announce_telegram_swallows_not_configured(monkeypatch):
 
     monkeypatch.setattr("agents.gwaihir.notifier.send_message", not_configured)
 
-    announce(job, {"status": "ok"})
+    assert announce(job, {"status": "ok"}) == ["no token"]
+
+
+def test_announce_discord_returns_send_errors(monkeypatch):
+    job = _cron_job(delivery=JobDelivery(mode="discord", to="42"))
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr("agents.tombombadil.delivery.publish", boom)
+
+    assert announce(job, {"status": "ok"}) == ["redis down"]
+
+
+def _audit_job() -> Job:
+    return _cron_job(
+        payload=JobPayload(kind="systemEvent", text="github_audit", timeout_seconds=60),
+        delivery=JobDelivery(mode="telegram", to="111"),
+    )
+
+
+def _audit_client(status: str, **body) -> httpx.Client:
+    def handler(_request):
+        return httpx.Response(200, json={"status": status, **body})
+
+    return httpx.Client(transport=httpx.MockTransport(handler), base_url="http://api")
+
+
+def test_run_one_records_a_failed_telegram_send(r, monkeypatch):
+    def boom(*_a, **_kw):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr("agents.gwaihir.notifier.send_message", boom)
+    job = _audit_job()
+    save_job(r, job)
+
+    result_job = run_one(_audit_client("completed", result={"reply": "2 commits"}), r, job)
+
+    assert result_job.last_status != "ok"
+    assert result_job.consecutive_errors == 1
+    assert result_job.last_error == "network down"
+    persisted = read_job(r, "job-1")
+    assert persisted is not None
+    assert persisted.last_error == "network down"
+    assert persisted.consecutive_errors == 1
+    assert persisted.next_run_at_ms is not None
+    assert persisted.next_run_at_ms > 1_000
+
+
+def test_run_one_records_telegram_not_configured(r, monkeypatch):
+    from agents.gwaihir.notifier import TelegramNotConfiguredError
+
+    def not_configured(*_a, **_kw):
+        raise TelegramNotConfiguredError("no token")
+
+    monkeypatch.setattr("agents.gwaihir.notifier.send_message", not_configured)
+    job = _audit_job()
+    save_job(r, job)
+
+    result_job = run_one(_audit_client("completed", result={"reply": "2 commits"}), r, job)
+
+    assert result_job.last_status != "ok"
+    assert result_job.consecutive_errors == 1
+    assert result_job.last_error == "no token"
+
+
+def test_run_one_keeps_audit_error_when_telegram_send_fails(r, monkeypatch):
+    def boom(*_a, **_kw):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr("agents.gwaihir.notifier.send_message", boom)
+    job = _audit_job()
+    save_job(r, job)
+
+    result_job = run_one(_audit_client("failed", error="GitHub rate limit hit (429)"), r, job)
+
+    assert result_job.last_error == "GitHub rate limit hit (429); network down"
+    assert result_job.consecutive_errors == 1
 
 
 def test_reschedule_cron_advances(r):
