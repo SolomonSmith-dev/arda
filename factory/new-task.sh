@@ -21,11 +21,13 @@ git -C "$repo" worktree add -q -b "task/$slug" "$wt" "origin/$base"
 cat > "$fdir/STATUS-$slug.md" <<STATUS
 # STATUS: $slug
 - branch: task/$slug
+- base: $base
 - worktree: $wt
 - started: $(date -u +%Y-%m-%dT%H:%MZ)
 - backlog row:
 - now running:
 - claims:
+- paths:
 - done when: scripts/check.sh prints GATE PASS and the row's acceptance check passes
 STATUS
 
