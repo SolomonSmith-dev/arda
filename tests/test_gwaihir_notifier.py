@@ -69,9 +69,11 @@ def test_send_message_http_error_does_not_log_bot_token(caplog, monkeypatch):
         return httpx.Response(403, json={"ok": False, "description": "Forbidden"})
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    with caplog.at_level(logging.INFO):
-        with pytest.raises(httpx.HTTPStatusError):
-            send_message(1, "x", client=client, token=token)
+    with (
+        caplog.at_level(logging.INFO),
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        send_message(1, "x", client=client, token=token)
 
     assert token not in caplog.text
     assert f"/bot{token}/" not in caplog.text
