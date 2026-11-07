@@ -153,9 +153,11 @@ def _commit_minutes_ago(repo, minutes_ago):
     assert res.returncode == 0, res.stderr
 
 
-def _write_status(fdir, slug, running, worktree):
+def _write_status(fdir, slug, running, worktree, started=None):
+    started_line = f"- started: {started}\n" if started else ""
     (fdir / f"STATUS-{slug}.md").write_text(
-        f"# STATUS: {slug}\n- branch: task/{slug}\n- worktree: {worktree}\n- now running: {running}\n"
+        f"# STATUS: {slug}\n- branch: task/{slug}\n- worktree: {worktree}\n"
+        f"{started_line}- now running: {running}\n"
     )
 
 
@@ -201,6 +203,23 @@ def test_status_flags_an_old_branch_and_not_a_fresh_one(tmp_path):
     empty.mkdir()
     quiet = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(empty)})
     assert quiet.returncode == 0 and quiet.stdout == ""
+
+
+def test_status_uses_started_when_worktree_only_has_old_base_commits(tmp_path):
+    """new-task.sh branches from origin/main; HEAD can be hours old while started is now."""
+    fdir = tmp_path / "state"
+    fdir.mkdir()
+    repo = tmp_path / "trees" / "brand-new"
+    _commit_minutes_ago(repo, 180)
+    started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%MZ")
+    _write_status(fdir, "brand-new", "writing", repo, started=started)
+
+    res = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(fdir)})
+    assert res.returncode == 0, res.stderr
+    line = _status_lines(res.stdout)["brand-new"]
+    assert line[0] == "brand-new" and line[3] == "writing"
+    assert int(line[2]) <= 1
+    assert line[-1] != "STALE" and len(line) == 4
 
 
 def test_release_by_a_non_holder_fails_and_changes_nothing(tmp_path):
