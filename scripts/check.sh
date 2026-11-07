@@ -30,9 +30,11 @@ run_remote() {
     die "rsync failed"
   fi
 
+  # Fresh tree has no .venv; CI installs the dev extra before the gate.
+  # Non-interactive ssh PATH often omits ~/.local/bin where uv lives.
   set +e
   ssh "${ssh_opts[@]}" "$host" \
-    "cd ${remote_dir} && git init -q && exec env -u REMOTE bash scripts/check.sh"
+    "cd ${remote_dir} && git init -q && export PATH=\"\$HOME/.local/bin:\$PATH\" && uv sync --extra dev --frozen && exec env -u REMOTE bash scripts/check.sh"
   gate=$?
   set -e
 

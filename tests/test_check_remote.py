@@ -165,6 +165,8 @@ def test_gate_pass_relays_output_and_unsets_remote(tmp_path):
     assert "gitignore" in log
     assert "env -u REMOTE" in log
     assert "bash scripts/check.sh" in log
+    assert "uv sync --extra dev --frozen" in log
+    assert ".local/bin" in log
     assert "CLEANUP" in log
     assert SECRET not in log
 
