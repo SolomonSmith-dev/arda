@@ -35,6 +35,15 @@ else
   bad "no cron:job:* keys at all — restart api so the lifespan seeds it, or run /sync as owner"
 fi
 
+# F-9 (#70). The Letterboxd branch above passes when any cron:job:* key exists.
+# The GitHub audit seed is its own key, so a miss fails even then.
+rumil="$(docker compose exec -T redis redis-cli EXISTS cron:job:rumil_github_audit 2>/dev/null | tr -d '\r')"
+if [[ "$rumil" == "1" ]]; then
+  ok "cron:job:rumil_github_audit is seeded"
+else
+  bad "cron:job:rumil_github_audit is not seeded — restart api so the lifespan seeds it"
+fi
+
 echo
 echo "=== D5 Milvus (milvus profile) ==="
 if docker compose ps milvus 2>/dev/null | grep -qE 'running|Up'; then
