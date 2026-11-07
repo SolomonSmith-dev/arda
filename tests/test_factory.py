@@ -210,3 +210,130 @@ def test_release_by_a_non_holder_fails_and_changes_nothing(tmp_path):
     res = run([claim, "release", "README.md", "b"], env=env)
     assert res.returncode == 1 and "nothing to release" in res.stderr
     assert "README.md | a" in (tmp_path / "CLAIMS.md").read_text()
+
+
+def _init_task_repo(tmp_path, slug):
+    fdir = tmp_path / "state"
+    wt = fdir / "wt" / slug
+    wt.mkdir(parents=True)
+    ident = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+    assert run(["git", "init", "-q", "-b", "main"], cwd=wt).returncode == 0
+    (wt / "base.txt").write_text("base\n")
+    assert run(["git", "add", "."], cwd=wt).returncode == 0
+    assert run(["git", *ident, "commit", "-qm", "base"], cwd=wt).returncode == 0
+    return fdir, wt, ident
+
+
+def _point_origin(wt, base):
+    assert run(["git", "update-ref", f"refs/remotes/origin/{base}", "HEAD"], cwd=wt).returncode == 0
+
+
+def _commit_all(wt, ident, message):
+    assert run(["git", "add", "-A"], cwd=wt).returncode == 0
+    assert run(["git", *ident, "commit", "-qm", message], cwd=wt).returncode == 0
+
+
+def _write_scope_status(fdir, slug, paths, worktree, base="main"):
+    listed = " ".join(paths)
+    (fdir / f"STATUS-{slug}.md").write_text(
+        f"# STATUS: {slug}\n"
+        f"- branch: task/{slug}\n"
+        f"- base: {base}\n"
+        f"- worktree: {worktree}\n"
+        f"- paths: {listed}\n"
+    )
+
+
+def test_scope_check_parses_and_is_executable():
+    script = ROOT / "factory" / "scope-check.sh"
+    assert script.stat().st_mode & 0o111, "scope-check.sh is not executable"
+    assert run(["bash", "-n", str(script)]).returncode == 0
+
+
+def test_scope_check_fails_out_of_scope_and_passes_when_every_file_is_listed(tmp_path):
+    fdir, wt, ident = _init_task_repo(tmp_path, "scope")
+    _point_origin(wt, "trunk")
+    script = str(ROOT / "factory" / "scope-check.sh")
+    env = {"FACTORY_DIR": str(fdir)}
+    _write_scope_status(fdir, "scope", [], wt, base="trunk")
+
+    quiet = run([script, "scope"], env=env)
+    assert quiet.returncode == 0, quiet.stderr
+
+    (wt / "allowed.txt").write_text("ok\n")
+    (wt / "other.txt").write_text("no\n")
+    _commit_all(wt, ident, "both")
+    _write_scope_status(fdir, "scope", ["allowed.txt"], wt, base="trunk")
+    refused = run([script, "scope"], env=env)
+    assert refused.returncode == 1, refused.stderr
+    assert "OUT OF SCOPE: other.txt" in refused.stderr
+    assert "OUT OF SCOPE: allowed.txt" not in refused.stderr
+
+    _write_scope_status(fdir, "scope", ["allowed.txt", "other.txt"], wt, base="trunk")
+    accepted = run([script, "scope"], env=env)
+    assert accepted.returncode == 0, accepted.stderr
+    assert accepted.stderr == ""
+
+    (wt / "sneak.txt").write_text("x\n")
+    dirty = run([script, "scope"], env=env)
+    assert dirty.returncode == 1, dirty.stderr
+    assert "OUT OF SCOPE: sneak.txt" in dirty.stderr
+
+
+def test_scope_check_treats_a_directory_as_a_prefix_not_a_string_prefix(tmp_path):
+    fdir, wt, ident = _init_task_repo(tmp_path, "prefix")
+    _point_origin(wt, "main")
+    (wt / "src" / "ui").mkdir(parents=True)
+    (wt / "src" / "ui" / "a.py").write_text("a\n")
+    (wt / "src" / "uix").mkdir()
+    (wt / "src" / "uix" / "b.py").write_text("b\n")
+    _commit_all(wt, ident, "ui")
+    _write_scope_status(fdir, "prefix", ["src/ui"], wt)
+    res = run(
+        [str(ROOT / "factory" / "scope-check.sh"), "prefix"],
+        env={"FACTORY_DIR": str(fdir)},
+    )
+    assert res.returncode == 1, res.stderr
+    assert "OUT OF SCOPE: src/uix/b.py" in res.stderr
+    assert "OUT OF SCOPE: src/ui/a.py" not in res.stderr
+
+    _write_scope_status(fdir, "prefix", ["src/ui", "src/uix/b.py"], wt)
+    ok = run(
+        [str(ROOT / "factory" / "scope-check.sh"), "prefix"],
+        env={"FACTORY_DIR": str(fdir)},
+    )
+    assert ok.returncode == 0, ok.stderr
+
+
+def test_scope_check_sees_a_rename_out_of_an_in_scope_directory(tmp_path):
+    fdir, wt, ident = _init_task_repo(tmp_path, "move")
+    (wt / "src" / "core").mkdir(parents=True)
+    (wt / "src" / "core" / "x.py").write_text("x\n")
+    (wt / "docs").mkdir()
+    (wt / "docs" / "old.md").write_text("old\n")
+    _commit_all(wt, ident, "seed")
+    _point_origin(wt, "main")
+    (wt / "src" / "ui").mkdir(parents=True)
+    assert run(["git", "mv", "src/core/x.py", "src/ui/x.py"], cwd=wt).returncode == 0
+    assert run(["git", "rm", "-q", "docs/old.md"], cwd=wt).returncode == 0
+    _commit_all(wt, ident, "move")
+    _write_scope_status(fdir, "move", ["src/ui"], wt)
+    res = run(
+        [str(ROOT / "factory" / "scope-check.sh"), "move"],
+        env={"FACTORY_DIR": str(fdir)},
+    )
+    assert res.returncode == 1, res.stderr
+    assert "OUT OF SCOPE: src/core/x.py" in res.stderr
+    assert "OUT OF SCOPE: docs/old.md" in res.stderr
+    assert "OUT OF SCOPE: src/ui/x.py" not in res.stderr
+
+
+def test_scope_check_rejects_a_bad_slug_and_a_missing_status(tmp_path):
+    script = str(ROOT / "factory" / "scope-check.sh")
+    bad = run([script, "Bad Slug"], env={"FACTORY_DIR": str(tmp_path)})
+    assert bad.returncode == 2
+    missing = run([script, "missing"], env={"FACTORY_DIR": str(tmp_path)})
+    assert missing.returncode == 2 and "no status" in missing.stderr
+    (tmp_path / "STATUS-scope.md").write_text("# STATUS: scope\n- paths: ../secret\n")
+    escaped = run([script, "scope"], env={"FACTORY_DIR": str(tmp_path)})
+    assert escaped.returncode == 2 and "bad path: ../secret" in escaped.stderr
