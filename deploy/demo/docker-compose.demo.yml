@@ -7,6 +7,12 @@ name: arda-demo
 services:
   api:
     image: arda-demo:latest
+    # The demo checkout has no project .env, so the base interpolation of
+    # ARDA_EXTRAS is empty. Pin the extra here so the image can import
+    # HuggingFaceEmbedding.
+    build:
+      args:
+        ARDA_EXTRAS: embeddings
     # Loopback only: cloudflared is the one thing that may reach the app.
     # 5001 so it never collides with a production ARDA on 5000.
     ports: !override
@@ -15,15 +21,21 @@ services:
       - .env.demo
     environment: !override
       DEMO_MODE: "true"
+      # The root filesystem is read-only, so the model download cannot use
+      # the default cache under /root. Both paths sit on hf_cache.
+      HF_HOME: /cache/huggingface
+      TORCH_HOME: /cache/huggingface/torch
     depends_on: !reset []
-    volumes: !reset []
+    volumes: !override
+      - hf_cache:/cache/huggingface
     read_only: true
     tmpfs:
       - /tmp
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
-    mem_limit: 768m
+    # Cap for torch and MiniLM in this process.
+    mem_limit: 2g
     pids_limit: 200
 
   # No executor, no queue, no scheduler in the demo. They never start.
@@ -31,3 +43,6 @@ services:
     profiles: ["off"]
   redis:
     profiles: ["off"]
+
+volumes:
+  hf_cache:

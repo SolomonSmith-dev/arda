@@ -88,18 +88,31 @@ The app caps tokens per day (`DEMO_DAILY_TOKEN_CAP`, default 150000), but a limi
 
 ## 6. Build and start the demo container
 
+`.env.demo` sets `USE_MOCK_EMBEDDER=false`. Keep that line. The override builds the image with `ARDA_EXTRAS=embeddings`, so the container can import `HuggingFaceEmbedding`. On startup Finrod loads `sentence-transformers/all-MiniLM-L6-v2`.
+
+The container root filesystem is read-only. The model is stored on the `hf_cache` volume at `HF_HOME=/cache/huggingface`. Torch uses `TORCH_HOME` on that same volume. The volume keeps the download across rebuilds. `mem_limit` is 2g so torch and MiniLM can load.
+
 **Run**
 ```bash
 cd ~/arda-demo
 docker compose -p arda-demo -f docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d --build api
 ```
-**Expect** a build, then `Container arda-demo-api-1  Started`. The first build takes a few minutes on this CPU.
+**Expect** a build, then `Container arda-demo-api-1  Started`. The first build installs torch. On this CPU that takes longer than the slim image. The first start downloads the model into `hf_cache` before `/health` answers.
 
-**Done check** (exactly one container, and it becomes healthy within 90 seconds)
+**Done check** (exactly one container, and it becomes healthy within 5 minutes)
 ```bash
-[ "$(docker compose -p arda-demo ps -q | wc -l)" = 1 ] && timeout 90 sh -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" arda-demo-api-1)" = healthy ]; do sleep 2; done' && echo PASS || echo FAIL
+[ "$(docker compose -p arda-demo ps -q | wc -l)" = 1 ] && timeout 300 sh -c 'until [ "$(docker inspect -f "{{.State.Health.Status}}" arda-demo-api-1)" = healthy ]; do sleep 2; done' && echo PASS || echo FAIL
 ```
-If it fails: `docker logs arda-demo-api-1 | tail -30`.
+If it fails: `docker logs arda-demo-api-1 | tail -30`. A `Read-only file system` line means `hf_cache` is not mounted. An out-of-memory kill means the 2g limit was too low.
+
+**Done check** (the running container has real embeddings and a writable cache path)
+```bash
+envout=$(docker inspect arda-demo-api-1 --format '{{range .Config.Env}}{{println .}}{{end}}')
+printf '%s\n' "$envout" | /usr/bin/grep -qx 'USE_MOCK_EMBEDDER=false' \
+  && printf '%s\n' "$envout" | /usr/bin/grep -qx 'HF_HOME=/cache/huggingface' \
+  && docker inspect arda-demo-api-1 --format '{{range .Mounts}}{{println .Destination .RW}}{{end}}' | /usr/bin/grep -qx '/cache/huggingface true' \
+  && echo PASS || echo FAIL
+```
 
 ## 7. Verify the app locally, before any tunnel
 
