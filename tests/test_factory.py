@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ SCRIPTS = [
     ROOT / "factory" / "new-task.sh",
     ROOT / "factory" / "claim.sh",
     ROOT / "factory" / "review.sh",
+    ROOT / "factory" / "status.sh",
 ]
 
 
@@ -132,6 +134,73 @@ def test_reviewer_output_must_carry_a_verdict(tmp_path, output, code):
     assert res.returncode == code, res.stderr
     if code == 5:
         assert "no verdict" in res.stderr
+
+
+def _commit_minutes_ago(repo, minutes_ago):
+    repo.mkdir(parents=True)
+    assert run(["git", "init", "-q", "-b", "main"], cwd=repo).returncode == 0
+    ident = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+    (repo / "f.txt").write_text("x\n")
+    assert run(["git", "add", "."], cwd=repo).returncode == 0
+    stamp = (datetime.now(UTC) - timedelta(minutes=minutes_ago)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
+    res = run(
+        ["git", *ident, "commit", "-qm", "work"],
+        cwd=repo,
+        env={"GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp},
+    )
+    assert res.returncode == 0, res.stderr
+
+
+def _write_status(fdir, slug, running, worktree):
+    (fdir / f"STATUS-{slug}.md").write_text(
+        f"# STATUS: {slug}\n- branch: task/{slug}\n- worktree: {worktree}\n- now running: {running}\n"
+    )
+
+
+def _status_lines(stdout):
+    return {line.split(" | ")[0]: line.split(" | ") for line in stdout.splitlines()}
+
+
+def test_status_flags_an_old_branch_and_not_a_fresh_one(tmp_path):
+    fdir = tmp_path / "state"
+    fdir.mkdir()
+    trees = tmp_path / "trees"
+    for slug, age, running in (
+        ("fresh", 1, "writing tests"),
+        ("recent", 29, "still writing"),
+        ("cutoff", 30, "quiet"),
+        ("old", 45, "waiting"),
+    ):
+        repo = trees / slug
+        _commit_minutes_ago(repo, age)
+        _write_status(fdir, slug, running, repo)
+    _write_status(fdir, "gone", "idle", trees / "missing")
+    plain = fdir / "wt" / "plain"
+    _commit_minutes_ago(plain, 1)
+    (fdir / "STATUS-plain.md").write_text("# STATUS: plain\n- branch: task/plain\n- now running: local\n")
+
+    res = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(fdir)})
+    assert res.returncode == 0, res.stderr
+    lines = _status_lines(res.stdout)
+    assert set(lines) == {"fresh", "recent", "cutoff", "old", "gone", "plain"}
+
+    assert lines["fresh"] == ["fresh", "task/fresh", lines["fresh"][2], "writing tests"]
+    assert int(lines["fresh"][2]) <= 1
+    assert lines["recent"][3] == "still writing" and int(lines["recent"][2]) == 29
+    assert len(lines["recent"]) == 4
+    assert lines["cutoff"] == ["cutoff", "task/cutoff", "30", "quiet", "STALE"]
+    assert lines["old"][1] == "task/old" and lines["old"][3] == "waiting" and lines["old"][-1] == "STALE"
+    assert 44 <= int(lines["old"][2]) <= 46
+    assert lines["gone"] == ["gone", "task/gone", "-", "idle", "STALE"]
+    assert lines["plain"][:3] == ["plain", "task/plain", lines["plain"][2]]
+    assert lines["plain"][3] == "local" and len(lines["plain"]) == 4
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    quiet = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(empty)})
+    assert quiet.returncode == 0 and quiet.stdout == ""
 
 
 def test_release_by_a_non_holder_fails_and_changes_nothing(tmp_path):
