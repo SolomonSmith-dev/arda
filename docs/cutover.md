@@ -23,14 +23,48 @@ cd /path/to/arda
 docker build -t arda:0.3.0 .
 ```
 
-Default install skips `sentence-transformers` + torch (~1GB), so
-Finrod uses the lightweight `MockEmbedder` (hash-based vectors).
-Image lands around ~400MB. To enable real semantic embeddings on
-a beefier host, edit the `Dockerfile` to use `pip install -e .[full]`
-and unset `USE_MOCK_EMBEDDER`.
+The default image skips `sentence-transformers` and torch, so Finrod
+uses `MockEmbedding` and the image stays near 400 MB.
 
-The host (`home-server`, Debian 12, x86_64, Core 2 Duo, 7.5GB RAM)
-cannot run torch comfortably; keep the slim build.
+The host is `home-server`, Debian 12, x86_64, a Core 2 Duo with 7.5 GB
+of RAM. Torch runs on that CPU. A torch 2.13.0 CPU wheel completed a
+real matmul there, and the CPU has no AVX.
+
+Real semantic embeddings need the `embeddings` extra. Set
+`ARDA_EXTRAS=embeddings` and `USE_MOCK_EMBEDDER=false` in `.env`.
+Rebuild with the command below. Compose passes `ARDA_EXTRAS` into the
+image. The `docker build` command above stays slim, because it does not
+read `.env`. The Dockerfile already selects extras from `ARDA_EXTRAS`.
+The extra adds `sentence-transformers` and torch. Finrod keeps vectors
+in the in-memory
+`SimpleVectorStore`. Issue #85 records about 1 GB of image growth from
+torch.
+
+```bash
+docker compose up -d --build
+```
+
+Issue #85 records about 4 GB free on this host. It also records
+`all-MiniLM-L6-v2` at about 90 MB of weights and about 400 MB resident.
+Every process that builds a Finrod loads a copy. Run `free -h` after
+the first query. That query downloads the model from the Hugging Face
+Hub. Without `HF_TOKEN`, the Hub warns about rate limits.
+
+Keep the `numpy<2` pin in `pyproject.toml`. NumPy 2 wheels need
+`popcnt` and `sse4_2`. This CPU has neither. Importing NumPy 2 raises
+`RuntimeError` for baseline `X86_V2`. That import crash-looped the API
+on the first deploy of `main`.
+
+Milvus documents SSE4.2 as a hard minimum. This CPU does not have it,
+so D5 is very likely not achievable on this hardware. Starting the
+`milvus` profile was not tested, and it also risks running out of
+memory. The `[full]` extra pulls `pymilvus` for that server. Real
+embeddings use the `embeddings` extra, as above. See the Milvus note
+below and AGENTS.md, "The deploy host CPU is pre-2010". Issue #85 lists
+the host commands.
+
+On the slim image, with `USE_MOCK_LLM=false`, set `USE_MOCK_EMBEDDER=true`.
+When `USE_MOCK_EMBEDDER` is absent, it follows `USE_MOCK_LLM`.
 
 ## Cutover
 
@@ -88,13 +122,15 @@ The ``legacy_api/earendil_api.py`` rollback artifact has been removed; ``api/mai
   The API lifespan seeds `tom_letterboxd_sync` into Redis automatically;
   Galadriel must be running for the job to fire. Owner can also run
   `/sync` in Discord.
-- **Milvus (D5):** enable with `docker compose --profile milvus up -d` and
-  install the `[full]` extra (`uv sync --extra dev --extra full`) with
-  `USE_MOCK_EMBEDDER=false` + `MILVUS_HOST=milvus`. Finrod falls back to
-  the in-memory store when Milvus is unreachable (facts evaporate on
-  container recreate).
-- **Image size** can be trimmed later by switching to a CPU-only
-  torch wheel and dropping CUDA deps from the install set.
+- **Real embeddings.** Set `ARDA_EXTRAS=embeddings` and
+  `USE_MOCK_EMBEDDER=false`, then rebuild. Finrod uses
+  `sentence-transformers` against the in-memory `SimpleVectorStore`.
+- **Milvus (D5).** Milvus documents SSE4.2 as a hard minimum, and this
+  CPU has none, so D5 is very likely not achievable here. Starting the
+  `milvus` profile was not tested, and it also risks running out of
+  memory. The `[full]` extra pulls `pymilvus` for that server. When
+  Milvus is unreachable, Finrod uses the in-memory store, and those
+  facts disappear when the container is recreated.
 
 ## Step 0: reconcile the host onto `main`
 
@@ -138,13 +174,16 @@ without Docker cannot close these). From the repo root:
 ```bash
 # Enable profiles
 docker compose --profile cron --profile discord up -d          # D4 (+ Tom)
+# D5 is very likely not achievable here. This CPU has no SSE4.2, and
+# starting Milvus was not tested. The profile also risks running out of memory.
 docker compose --profile milvus up -d                          # D5
 
-# .env (compose network DNS names)
+# .env
+# Real embeddings need ARDA_EXTRAS=embeddings and USE_MOCK_EMBEDDER=false,
+# then a rebuild. The [full] extra pulls pymilvus. Milvus needs SSE4.2.
+# Keep numpy<2 pinned.
 # MILVUS_HOST=milvus
 # MILVUS_PORT=19530
-# USE_MOCK_EMBEDDER=false
-# (image/build must include the [full] extra for real embeddings)
 
 # Checklist script
 ./scripts/verify-d4-d5.sh
