@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 import httpx
 import pytest
 
 from agents.gwaihir.notifier import TelegramNotConfiguredError, send_message
+from core.logging import configure_logging
 
 
 def _client_capturing(captured: dict, response_body: dict | None = None) -> httpx.Client:
@@ -54,3 +57,21 @@ def test_send_message_uses_settings_token_when_not_passed(monkeypatch):
     send_message(7, "ping", client=client)
 
     assert "from-settings" in captured["url"]
+
+
+def test_send_message_http_error_does_not_log_bot_token(caplog, monkeypatch):
+    token = "123456789:AAHexample-bot-token_secret"
+    monkeypatch.setattr("agents.gwaihir.notifier.settings.telegram_bot_token", token)
+    monkeypatch.setattr("core.logging.settings.telegram_bot_token", token)
+    configure_logging()
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"ok": False, "description": "Forbidden"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with caplog.at_level(logging.INFO):
+        with pytest.raises(httpx.HTTPStatusError):
+            send_message(1, "x", client=client, token=token)
+
+    assert token not in caplog.text
+    assert f"/bot{token}/" not in caplog.text

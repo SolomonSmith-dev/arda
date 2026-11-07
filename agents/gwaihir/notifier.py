@@ -6,6 +6,8 @@ Pure ``sendMessage`` wrapper. The bot uses it for replies; Galadriel's
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from core.config import settings
@@ -49,6 +51,10 @@ def send_message(
     owns_client = client is None
     if client is None:
         client = httpx.Client(timeout=SEND_TIMEOUT_SECONDS)
+    # httpx logs the full request URL at INFO, which embeds the bot token.
+    httpx_log = logging.getLogger("httpx")
+    prev_httpx_level = httpx_log.level
+    httpx_log.setLevel(logging.WARNING)
     try:
         resp = client.post(url, json=payload)
         resp.raise_for_status()
@@ -61,5 +67,6 @@ def send_message(
         )
         return body
     finally:
+        httpx_log.setLevel(prev_httpx_level)
         if owns_client:
             client.close()
