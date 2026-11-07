@@ -229,11 +229,12 @@ def test_run_one_records_a_failed_telegram_send(r, monkeypatch):
 
     result_job = run_one(_audit_client("completed", result={"reply": "2 commits"}), r, job)
 
-    assert result_job.last_status != "ok"
+    assert result_job.last_status == "error"
     assert result_job.consecutive_errors == 1
     assert result_job.last_error == "network down"
     persisted = read_job(r, "job-1")
     assert persisted is not None
+    assert persisted.last_status == "error"
     assert persisted.last_error == "network down"
     assert persisted.consecutive_errors == 1
     assert persisted.next_run_at_ms is not None
@@ -252,7 +253,7 @@ def test_run_one_records_telegram_not_configured(r, monkeypatch):
 
     result_job = run_one(_audit_client("completed", result={"reply": "2 commits"}), r, job)
 
-    assert result_job.last_status != "ok"
+    assert result_job.last_status == "error"
     assert result_job.consecutive_errors == 1
     assert result_job.last_error == "no token"
 
@@ -267,7 +268,36 @@ def test_run_one_keeps_audit_error_when_telegram_send_fails(r, monkeypatch):
 
     result_job = run_one(_audit_client("failed", error="GitHub rate limit hit (429)"), r, job)
 
+    assert result_job.last_status == "failed"
     assert result_job.last_error == "GitHub rate limit hit (429); network down"
+    assert result_job.consecutive_errors == 1
+
+
+def test_run_one_records_discord_send_failure_on_a_clean_sync(r, monkeypatch):
+    from agents.tombombadil import sync_job
+
+    def boom(*_a, **_kw):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr("agents.tombombadil.delivery.publish", boom)
+
+    class _Result:
+        fetched = 1
+        new = 0
+        saved = 1
+        errors = []
+
+    monkeypatch.setattr(sync_job, "run_sync", lambda _r: _Result())
+    job = _cron_job(
+        payload=JobPayload(kind="systemEvent", text="letterboxd_sync"),
+        delivery=JobDelivery(mode="discord", to="42"),
+    )
+    save_job(r, job)
+
+    result_job = run_one(_client_returning({"status": "ok"}), r, job)
+
+    assert result_job.last_status == "error"
+    assert result_job.last_error == "redis down"
     assert result_job.consecutive_errors == 1
 
 
