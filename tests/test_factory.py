@@ -153,9 +153,11 @@ def _commit_minutes_ago(repo, minutes_ago):
     assert res.returncode == 0, res.stderr
 
 
-def _write_status(fdir, slug, running, worktree):
+def _write_status(fdir, slug, running, worktree, started=None):
+    started_line = f"- started: {started}\n" if started else ""
     (fdir / f"STATUS-{slug}.md").write_text(
-        f"# STATUS: {slug}\n- branch: task/{slug}\n- worktree: {worktree}\n- now running: {running}\n"
+        f"# STATUS: {slug}\n- branch: task/{slug}\n- worktree: {worktree}\n"
+        f"{started_line}- now running: {running}\n"
     )
 
 
@@ -201,6 +203,84 @@ def test_status_flags_an_old_branch_and_not_a_fresh_one(tmp_path):
     empty.mkdir()
     quiet = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(empty)})
     assert quiet.returncode == 0 and quiet.stdout == ""
+
+
+def test_status_uses_started_when_worktree_only_has_old_base_commits(tmp_path):
+    """new-task.sh branches from origin/main; HEAD can be hours old while started is now."""
+    fdir = tmp_path / "state"
+    fdir.mkdir()
+    repo = tmp_path / "trees" / "brand-new"
+    _commit_minutes_ago(repo, 180)
+    started = datetime.now(UTC).strftime("%Y-%m-%dT%H:%MZ")
+    _write_status(fdir, "brand-new", "writing", repo, started=started)
+
+    res = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(fdir)})
+    assert res.returncode == 0, res.stderr
+    line = _status_lines(res.stdout)["brand-new"]
+    assert line[0] == "brand-new" and line[3] == "writing"
+    assert 0 <= int(line[2]) <= 1
+    assert line[-1] != "STALE" and len(line) == 4
+
+
+def test_status_falls_back_to_commit_and_clamps_future_started(tmp_path):
+    fdir = tmp_path / "state"
+    fdir.mkdir()
+    trees = tmp_path / "trees"
+
+    missing = trees / "missing-started"
+    _commit_minutes_ago(missing, 45)
+    _write_status(fdir, "missing-started", "idle", missing)
+
+    malformed = trees / "malformed-started"
+    _commit_minutes_ago(malformed, 1)
+    _write_status(fdir, "malformed-started", "working", malformed, started="not-a-date")
+
+    newer_commit = trees / "newer-commit"
+    _commit_minutes_ago(newer_commit, 1)
+    old_started = (datetime.now(UTC) - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%MZ")
+    _write_status(fdir, "newer-commit", "working", newer_commit, started=old_started)
+
+    future_started = trees / "future-started"
+    _commit_minutes_ago(future_started, 180)
+    future = (datetime.now(UTC) + timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%MZ")
+    _write_status(fdir, "future-started", "working", future_started, started=future)
+
+    future_commit = trees / "future-commit"
+    _commit_minutes_ago(future_commit, -10)
+    old_started = (datetime.now(UTC) - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%MZ")
+    _write_status(fdir, "future-commit", "working", future_commit, started=old_started)
+
+    res = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(fdir)})
+    assert res.returncode == 0, res.stderr
+    lines = _status_lines(res.stdout)
+    assert lines["missing-started"][-1] == "STALE"
+    assert 44 <= int(lines["missing-started"][2]) <= 46
+    assert lines["malformed-started"][3] == "working"
+    assert int(lines["malformed-started"][2]) <= 1
+    assert lines["newer-commit"][3] == "working"
+    assert int(lines["newer-commit"][2]) <= 1
+    assert lines["future-started"][3] == "working"
+    assert lines["future-started"][2] == "0"
+    assert len(lines["future-started"]) == 4
+    assert lines["future-commit"][2] == "0"
+    assert len(lines["future-commit"]) == 4
+
+
+def test_status_started_decides_stale_when_it_is_the_fresher_signal(tmp_path):
+    """An old `started` must decide STALE (commit is older); pins the TZ-parser trap."""
+    fdir = tmp_path / "state"
+    fdir.mkdir()
+    trees = tmp_path / "trees"
+    deciding = trees / "old-started-decides"
+    _commit_minutes_ago(deciding, 180)  # commit is old too; started is the fresher signal
+    old = (datetime.now(UTC) - timedelta(minutes=45)).strftime("%Y-%m-%dT%H:%MZ")
+    _write_status(fdir, "old-started-decides", "working", deciding, started=old)
+
+    res = run([str(ROOT / "factory" / "status.sh")], env={"FACTORY_DIR": str(fdir)})
+    assert res.returncode == 0, res.stderr
+    line = _status_lines(res.stdout)["old-started-decides"]
+    assert 44 <= int(line[2]) <= 46
+    assert line[-1] == "STALE"
 
 
 def test_release_by_a_non_holder_fails_and_changes_nothing(tmp_path):

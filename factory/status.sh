@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# One line per STATUS-*.md: slug, branch, minutes since the last commit, now running.
-# STALE when that commit is 30 minutes old or older, or when the worktree has no commit.
+# One line per STATUS-*.md: slug, branch, minutes since last activity, now running.
+# Activity is the later of STATUS `started:` and the worktree HEAD commit.
+# STALE when that instant is 30 minutes old or older, or when neither is known.
 # Usage: factory/status.sh
 # Reads FACTORY_DIR (default ~/.factory/arda), the same directory as the other factory scripts.
 set -euo pipefail
@@ -14,6 +15,15 @@ field() {
   line="${line#"- ${label}:"}"
   line="${line# }"
   printf '%s' "$line"
+}
+
+# Parse STATUS started stamps from new-task.sh (UTC, minute precision).
+epoch_of() {
+  local raw="$1" out
+  [ -n "$raw" ] || return 1
+  out="$(date -u -d "$raw" +%s 2>/dev/null)" || \
+    out="$(date -u -j -f '%Y-%m-%dT%H:%MZ' "$raw" +%s 2>/dev/null)" || return 1
+  printf '%s' "$out"
 }
 
 shopt -s nullglob
@@ -32,9 +42,22 @@ for file in "${files[@]}"; do
 
   minutes="-"
   stale="STALE"
-  ts="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || true)"
+  ts=""
+  started_ts="$(epoch_of "$(field "$file" started)" || true)"
+  commit_ts="$(git -C "$wt" log -1 --format=%ct 2>/dev/null || true)"
+  if [ -n "$started_ts" ]; then
+    ts="$started_ts"
+  fi
+  if [ -n "$commit_ts" ]; then
+    if [ -z "$ts" ] || [ "$commit_ts" -gt "$ts" ]; then
+      ts="$commit_ts"
+    fi
+  fi
   if [ -n "$ts" ]; then
     minutes="$(( (now - ts) / 60 ))"
+    if [ "$minutes" -lt 0 ]; then
+      minutes=0
+    fi
     if [ "$minutes" -lt "$stale_after" ]; then
       stale=""
     fi
