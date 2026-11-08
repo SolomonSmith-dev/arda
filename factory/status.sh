@@ -21,7 +21,8 @@ field() {
 epoch_of() {
   local raw="$1" out
   [ -n "$raw" ] || return 1
-  out="$(date -u -d "$raw" +%s 2>/dev/null)" || return 1
+  out="$(date -u -d "$raw" +%s 2>/dev/null)" || \
+    out="$(date -u -j -f '%Y-%m-%dT%H:%MZ' "$raw" +%s 2>/dev/null)" || return 1
   printf '%s' "$out"
 }
 
@@ -54,6 +55,9 @@ for file in "${files[@]}"; do
   fi
   if [ -n "$ts" ]; then
     minutes="$(( (now - ts) / 60 ))"
+    if [ "$minutes" -lt 0 ]; then
+      minutes=0
+    fi
     if [ "$minutes" -lt "$stale_after" ]; then
       stale=""
     fi
