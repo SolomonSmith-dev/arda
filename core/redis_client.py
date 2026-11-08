@@ -12,6 +12,13 @@ from core.config import settings
 TASK_QUEUE_KEY = "task_queue"
 RESULT_TTL_SECONDS = 300
 
+# Pinned, not left to the library: redis-py 8.1 (what the Docker image
+# resolves, since it ignores uv.lock) defaults the read timeout to 5s. Tom's
+# 5s BLPOP then timed out on the socket, retried, and failed once a minute, so
+# no Discord announcement was ever delivered. Blocking callers must wait for
+# less than this.
+SOCKET_TIMEOUT_SECONDS = 30.0
+
 
 def task_result_key(task_id: str) -> str:
     return f"task:{task_id}"
@@ -24,6 +31,7 @@ def get_redis_sync() -> redis.Redis:
         port=settings.redis_port,
         db=settings.redis_db,
         decode_responses=True,
+        socket_timeout=SOCKET_TIMEOUT_SECONDS,
     )
 
 
@@ -34,6 +42,7 @@ def get_redis_async() -> redis_async.Redis:
         port=settings.redis_port,
         db=settings.redis_db,
         decode_responses=True,
+        socket_timeout=SOCKET_TIMEOUT_SECONDS,
     )
 
 
