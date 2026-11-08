@@ -56,8 +56,9 @@ for file in "${files[@]}"; do
   if [ -n "$ts" ]; then
     minutes="$(( (now - ts) / 60 ))"
     if [ "$minutes" -lt 0 ]; then
-      minutes=0
-    fi
+  if [ -n "$ts" ]; then
+    minutes="$(( (now - ts) / 60 ))"
+    [ "$minutes" -lt 0 ] && minutes=0
     if [ "$minutes" -lt "$stale_after" ]; then
       stale=""
     fi
