@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from contextvars import ContextVar
 from uuid import uuid4
@@ -11,6 +12,67 @@ from core.config import settings
 
 _trace_id_var: ContextVar[str | None] = ContextVar("trace_id", default=None)
 _configured = False
+_BOT_TOKEN_IN_URL = re.compile(r"/bot[^/\s]+/")
+_REDACTED = "<redacted>"
+
+
+def redact_telegram_token(text: str) -> str:
+    """Strip Telegram bot tokens from text. Single source for logs and stored errors."""
+    token = settings.telegram_bot_token
+    if token:
+        text = text.replace(token, _REDACTED)
+    return _BOT_TOKEN_IN_URL.sub(f"/bot{_REDACTED}/", text)
+
+
+def _scrub_value(value):
+    if isinstance(value, str):
+        return redact_telegram_token(value)
+    if isinstance(value, dict):
+        return {k: _scrub_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_scrub_value(v) for v in value)
+    return value
+
+
+def _scrub_arg(arg):
+    """Log args may be non-str (httpx.URL); stringify only when a token shows."""
+    text = str(arg)
+    scrubbed = redact_telegram_token(text)
+    return scrubbed if scrubbed != text else arg
+
+
+class _RedactTelegramBotTokenFilter(logging.Filter):
+    """Scrub bot tokens from stdlib log records (httpx INFO URLs, tracebacks)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = redact_telegram_token(record.msg)
+        if isinstance(record.args, dict):
+            record.args = {k: _scrub_arg(v) for k, v in record.args.items()}
+        elif record.args:
+            record.args = tuple(_scrub_arg(a) for a in record.args)
+        if record.exc_info:
+            # Handlers format exc_info after filtering, so render it here.
+            record.exc_text = redact_telegram_token(
+                logging.Formatter().formatException(record.exc_info)
+            )
+            record.exc_info = None
+        elif record.exc_text:
+            record.exc_text = redact_telegram_token(record.exc_text)
+        return True
+
+
+def _install_telegram_token_log_filter() -> None:
+    filt = _RedactTelegramBotTokenFilter()
+    for name in ("httpx", "httpcore"):
+        logger = logging.getLogger(name)
+        if not any(isinstance(f, _RedactTelegramBotTokenFilter) for f in logger.filters):
+            logger.addFilter(filt)
+
+
+def _redact_event_dict(_logger, _name, event_dict):
+    """structlog processor: PrintLoggerFactory bypasses stdlib filters."""
+    return {k: _scrub_value(v) for k, v in event_dict.items()}
 
 
 def set_trace_id(trace_id: str | None) -> None:
@@ -37,6 +99,7 @@ def _inject_trace_id(_logger, _name, event_dict):
 def configure_logging() -> None:
     global _configured
     if _configured:
+        _install_telegram_token_log_filter()
         return
 
     logging.basicConfig(
@@ -50,6 +113,7 @@ def configure_logging() -> None:
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         _inject_trace_id,
+        _redact_event_dict,
     ]
 
     if settings.log_format == "json":
@@ -65,6 +129,7 @@ def configure_logging() -> None:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),
         cache_logger_on_first_use=True,
     )
+    _install_telegram_token_log_filter()
     _configured = True
 
 

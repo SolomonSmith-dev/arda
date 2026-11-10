@@ -15,6 +15,7 @@ import httpx
 from agents.galadriel.models import Job
 from agents.galadriel.scheduler import Schedule, is_one_shot, next_run_ms
 from agents.galadriel.store import delete_job, pop_due, save_job
+from agents.gwaihir.notifier import safe_exc_text
 from core.config import settings
 from core.logging import get_logger
 from core.redis_client import get_redis_sync
@@ -72,15 +73,19 @@ def _format_announcement(job: Job, result: dict) -> str:
     return f"[{job.name}] {body}".strip()
 
 
-def announce(job: Job, result: dict) -> None:
-    """Deliver a job's result via the configured transport.
+def announce(job: Job, result: dict) -> list[str]:
+    """Deliver a job's result via the configured transport; return send errors.
 
     - ``mode="announce"`` -> structured log only (legacy / dev).
     - ``mode="telegram"`` -> outbound Telegram sendMessage.
+    - ``mode="discord"`` -> Discord publish.
     - ``mode="none"`` or missing ``to`` -> no-op.
+
+    A send failure is returned as redacted text, never raised. Telegram not
+    being configured stays a warning and is not returned as an error.
     """
     if not job.delivery.to or job.delivery.mode == "none":
-        return
+        return []
 
     if job.delivery.mode == "announce":
         log.info(
@@ -89,7 +94,7 @@ def announce(job: Job, result: dict) -> None:
             to=job.delivery.to,
             result_status=result.get("status"),
         )
-        return
+        return []
 
     if job.delivery.mode == "telegram":
         from agents.gwaihir.notifier import TelegramNotConfiguredError, send_message
@@ -104,12 +109,14 @@ def announce(job: Job, result: dict) -> None:
                 to=job.delivery.to,
             )
         except Exception as e:
+            safe = safe_exc_text(e)
             log.error(
                 "telegram_delivery_failed",
                 job_id=job.id,
                 to=job.delivery.to,
-                exc=str(e),
+                exc=safe,
             )
+            return [safe]
 
     if job.delivery.mode == "discord":
         from agents.tombombadil.delivery import publish
@@ -118,12 +125,16 @@ def announce(job: Job, result: dict) -> None:
         try:
             publish(job.delivery.to, text)
         except Exception as e:
+            safe = safe_exc_text(e)
             log.error(
                 "discord_delivery_failed",
                 job_id=job.id,
                 to=job.delivery.to,
-                exc=str(e),
+                exc=safe,
             )
+            return [safe]
+
+    return []
 
 
 def reschedule(redis, job: Job) -> None:
@@ -176,7 +187,14 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
             result = {"status": "logged", "text": job.payload.text}
             log.info("system_event", job_id=job.id, text=job.payload.text)
 
-        announce(job, result)
+        delivery_errors = announce(job, result)
+        if delivery_errors:
+            result["errors"] = [*(result.get("errors") or []), *delivery_errors]
+            # Review finding: a failed send must not leave last_status healthy.
+            # Only the success words this worker writes are overridden; any
+            # other status (e.g. "partial") already names a bad run.
+            if result.get("status") in (None, "ok", "completed", "logged"):
+                result["status"] = "error"
         duration_ms = int((time.monotonic() - started) * 1000)
         # A handler that reports failure in its result rather than raising --
         # run_sync returns a populated `errors` list instead of throwing --
@@ -184,7 +202,7 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
         # meant a sync that fetched nothing, forever, showed last_status=ok,
         # consecutive_errors=0 and no last_error: an operator sees a healthy
         # daily job that has never worked.
-        run_errors = [str(e) for e in (result.get("errors") or [])]
+        run_errors = [safe_exc_text(e) for e in (result.get("errors") or [])]
         job = job.model_copy(
             update={
                 "last_run_at_ms": int(time.time() * 1000),
@@ -212,11 +230,11 @@ def run_one(client: httpx.Client, redis, job: Job) -> Job:
                 "last_run_at_ms": int(time.time() * 1000),
                 "last_status": "error",
                 "last_duration_ms": duration_ms,
-                "last_error": str(e),
+                "last_error": safe_exc_text(e),
                 "consecutive_errors": job.consecutive_errors + 1,
             }
         )
-        log.error("job_run_failed", job_id=job.id, exc=str(e))
+        log.error("job_run_failed", job_id=job.id, exc=safe_exc_text(e))
 
     reschedule(redis, job)
     return job
@@ -237,7 +255,7 @@ def run_forever() -> None:
                     run_one(client, redis, job)
                 time.sleep(POLL_INTERVAL_SECONDS)
             except Exception as e:
-                log.error("worker_loop_error", exc=str(e))
+                log.error("worker_loop_error", exc=safe_exc_text(e))
                 time.sleep(ERROR_BACKOFF_SECONDS)
 
 
