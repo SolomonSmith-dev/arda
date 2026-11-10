@@ -1,7 +1,7 @@
 # Mac Mini Cutover Runbook
 
 ARDA replaces the legacy Earendil API on the Mac Mini at
-`http://100.112.3.116:5000`. The host and port stay the same; the
+`http://<tailnet-ip>:5000`. The host and port stay the same; the
 process behind them is now `api.main:app` running in Docker.
 
 The MCP server (`mcp_server/server.py`) and any other clients hitting
@@ -26,7 +26,7 @@ docker build -t arda:0.3.0 .
 The default image skips `sentence-transformers` and torch, so Finrod
 uses `MockEmbedding` and the image stays near 400 MB.
 
-The host is `home-server`, Debian 12, x86_64, a Core 2 Duo with 7.5 GB
+The host is `<server-host>`, Debian 12, x86_64, a Core 2 Duo with 7.5 GB
 of RAM. Torch runs on that CPU. A torch 2.13.0 CPU wheel completed a
 real matmul there, and the CPU has no AVX.
 
@@ -72,7 +72,7 @@ When `USE_MOCK_EMBEDDER` is absent, it follows `USE_MOCK_LLM`.
 
    ```bash
    sudo systemctl stop earendil-worker
-   # also stop whatever supervises the legacy /home/.../earendil_api.py
+   # also stop whatever supervises the legacy /path/to/earendil_api.py
    ```
 
    Confirm port 5000 is free: `sudo lsof -i :5000` should be empty.
@@ -87,10 +87,10 @@ When `USE_MOCK_EMBEDDER` is absent, it follows `USE_MOCK_LLM`.
 3. **Smoke from the dev box.**
 
    ```bash
-   curl -s http://100.112.3.116:5000/health
+   curl -s http://<tailnet-ip>:5000/health
    # {"status":"online","agent":"earendil","version":"0.3.0"}
 
-   curl -s -X POST http://100.112.3.116:5000/query \
+   curl -s -X POST http://<tailnet-ip>:5000/query \
      -H "x-api-key: $ARDA_API_KEY" \
      -H "content-type: application/json" \
      -d '{"type":"system","action":"status"}'
@@ -134,7 +134,7 @@ The ``legacy_api/earendil_api.py`` rollback artifact has been removed; ``api/mai
 
 ## Step 0: reconcile the host onto `main`
 
-`home-server` has been running `claude/pr-6-hardening` for months, a tree
+`<server-host>` has been running `claude/pr-6-hardening` for months, a tree
 that predates the LangGraph orchestrator, the LlamaIndex Finrod migration,
 and CI. **`scripts/verify-d4-d5.sh` does not exist on that branch**, so D4
 and D5 cannot be verified until the host is on `main`. See AGENTS.md
@@ -143,8 +143,8 @@ and D5 cannot be verified until the host is on `main`. See AGENTS.md
 On a host that already has the script:
 
 ```bash
-ssh solomon@100.112.3.116          # /usr/bin/ssh; expect a Tailscale browser check
-cd /home/solomon/Code/arda-stack/arda
+ssh <user>@<tailnet-ip>          # /usr/bin/ssh; expect a Tailscale browser check
+cd /path/to/arda
 ./scripts/reconcile-deploy-host.sh --dry-run   # read the plan first
 ./scripts/reconcile-deploy-host.sh
 ```
@@ -156,7 +156,7 @@ one. Pipe it in and name the repo instead:
 
 ```bash
 cat scripts/reconcile-deploy-host.sh \
-  | ssh solomon@100.112.3.116 'bash -s -- --repo /home/solomon/Code/arda-stack/arda --dry-run'
+  | ssh <user>@<tailnet-ip> 'bash -s -- --repo /path/to/arda --dry-run'
 ```
 
 The script backs up the current HEAD to a `prod-backup-<timestamp>` branch,

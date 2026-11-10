@@ -11,7 +11,7 @@ The scheduler runs as a separate compose service gated behind the `cron` profile
 ## Bring it up
 
 ```bash
-cd ~/Code/arda-stack/arda
+cd /path/to/arda
 docker compose --profile cron up -d galadriel
 docker compose logs -f galadriel
 ```

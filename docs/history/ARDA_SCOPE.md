@@ -398,7 +398,7 @@ DISCORD_TOKEN=
 TMDB_API_KEY=
 
 # Earendil / MCP (Mac Mini connection)
-EARENDIL_HOST=http://100.112.3.116:5000
+EARENDIL_HOST=http://<tailnet-ip>:5000
 EARENDIL_API_KEY=earendil-dev-key-2026
 ```
 

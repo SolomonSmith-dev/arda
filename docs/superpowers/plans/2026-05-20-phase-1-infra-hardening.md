@@ -38,13 +38,13 @@ Everything else in Phase 1 is operational (SSH commands on home server).
 - [ ] **Step 1: SSH to home server**
 
 ```bash
-ssh solomon@100.112.3.116
+ssh <user>@<tailnet-ip>
 ```
 
 - [ ] **Step 2: Confirm current image tag for worker and gwaihir**
 
 ```bash
-cd /home/solomon/Code/arda-stack/arda
+cd /path/to/arda
 docker compose ps --format "table {{.Name}}\t{{.Image}}"
 ```
 
@@ -89,7 +89,7 @@ Expected for gwaihir: long-poll GET to Telegram API repeating.
 - [ ] **Step 1: Start Galadriel under the cron profile**
 
 ```bash
-cd /home/solomon/Code/arda-stack/arda
+cd /path/to/arda
 docker compose --profile cron up -d galadriel
 ```
 
@@ -178,7 +178,7 @@ On the home server, add the GitHub PAT (needs `repo` + `read:user` scopes):
 
 ```bash
 # On home server:
-cd /home/solomon/Code/arda-stack/arda
+cd /path/to/arda
 echo "GITHUB_TOKEN=<your-pat-here>" >> .env
 echo "GITHUB_USERNAME=SolomonSmith-dev" >> .env
 ```
@@ -213,7 +213,7 @@ git commit -m "feat(config): add github_token and github_username settings"
 
 ```bash
 # On home server:
-ARDA_API_KEY=$(grep ^ARDA_API_KEY /home/solomon/Code/arda-stack/arda/.env | cut -d= -f2)
+ARDA_API_KEY=$(grep ^ARDA_API_KEY /path/to/arda/.env | cut -d= -f2)
 echo $ARDA_API_KEY
 ```
 
@@ -252,7 +252,7 @@ Check for error lines and note them before proceeding.
 - [ ] **Step 5: Verify Sauron LLM routing is active**
 
 ```bash
-grep CLAUDE_API_KEY /home/solomon/Code/arda-stack/arda/.env
+grep CLAUDE_API_KEY /path/to/arda/.env
 ```
 
 If the value is empty, Sauron uses regex routing (still works, just less smart). Set it if you have an Anthropic key available:
