@@ -124,3 +124,30 @@ def test_child_logger_record_is_redacted_at_the_handler(monkeypatch):
     assert "sendMessage" in out
     assert token not in out
     assert "<redacted>" in out
+
+
+def test_late_root_handler_still_gets_redacted_records(monkeypatch):
+    """X2: a root handler installed AFTER configure_logging() must not see a raw token."""
+    import io
+
+    token = "123456:FAKE-TOKEN-ABCDEF"
+    stream = io.StringIO()
+    root = logging.getLogger()
+    saved = list(root.handlers)
+    old_level = root.level
+    root.handlers.clear()
+    try:
+        configure_logging()
+        root.handlers.clear()  # reconfiguration: the handlers present at configure time are gone
+        root.addHandler(logging.StreamHandler(stream))  # late handler, never got the filter
+        root.setLevel(logging.DEBUG)
+        logging.getLogger("httpcore.http11").warning("/bot%s/sendMessage", token)
+        logging.getLogger("httpx").warning("GET https://api.telegram.org/bot%s/getMe", token)
+    finally:
+        root.handlers[:] = saved
+        root.setLevel(old_level)
+
+    out = stream.getvalue()
+    assert "sendMessage" in out and "getMe" in out
+    assert "FAKE-TOKEN-ABCDEF" not in out
+    assert "<redacted>" in out

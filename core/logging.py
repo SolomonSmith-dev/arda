@@ -45,34 +45,57 @@ class _RedactTelegramBotTokenFilter(logging.Filter):
     """Scrub bot tokens from stdlib log records (httpx INFO URLs, tracebacks)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        # Redact the formatted message so a token split across template and args,
-        # or a "/bot%s/" template, cannot break formatting or slip through.
-        try:
-            message = record.getMessage()
-        except Exception:  # noqa: BLE001 - a malformed record must still be scrubbed
-            message = None
-        if message is not None:
-            scrubbed = redact_telegram_token(message)
-            if scrubbed != message:
-                record.msg, record.args = scrubbed, None
-        if isinstance(record.msg, str):
-            record.msg = redact_telegram_token(record.msg)
-        if isinstance(record.args, dict):
-            record.args = {k: _scrub_arg(v) for k, v in record.args.items()}
-        elif record.args:
-            record.args = tuple(_scrub_arg(a) for a in record.args)
-        if record.exc_info:
-            # Handlers format exc_info after filtering, so render it here.
-            record.exc_text = redact_telegram_token(
-                logging.Formatter().formatException(record.exc_info)
-            )
-            record.exc_info = None
-        elif record.exc_text:
-            record.exc_text = redact_telegram_token(record.exc_text)
+        _scrub_record(record)
         return True
 
 
+def _scrub_record(record: logging.LogRecord, always_render_exc: bool = True) -> None:
+    # Redact the formatted message so a token split across template and args,
+    # or a "/bot%s/" template, cannot break formatting or slip through.
+    try:
+        message = record.getMessage()
+    except Exception:  # noqa: BLE001 - a malformed record must still be scrubbed
+        message = None
+    if message is not None:
+        scrubbed = redact_telegram_token(message)
+        if scrubbed != message:
+            record.msg, record.args = scrubbed, None
+    if isinstance(record.msg, str):
+        record.msg = redact_telegram_token(record.msg)
+    if isinstance(record.args, dict):
+        record.args = {k: _scrub_arg(v) for k, v in record.args.items()}
+    elif record.args:
+        record.args = tuple(_scrub_arg(a) for a in record.args)
+    if record.exc_info:
+        # Handlers format exc_info after filtering, so render it here.
+        rendered = logging.Formatter().formatException(record.exc_info)
+        clean = redact_telegram_token(rendered)
+        if always_render_exc or clean != rendered:
+            record.exc_text = clean
+            record.exc_info = None
+    elif record.exc_text:
+        record.exc_text = redact_telegram_token(record.exc_text)
+
+
+def _install_record_factory() -> None:
+    """Scrub at record creation (X2): redaction no longer depends on which handler or logger
+    filter exists, so a handler added after configure_logging() still sees clean records.
+    Unrelated records keep their exc_info; only a traceback that carried a token is flattened."""
+    current = logging.getLogRecordFactory()
+    if getattr(current, "_redacts_telegram_token", False):
+        return
+
+    def factory(*args, **kwargs):
+        record = current(*args, **kwargs)
+        _scrub_record(record, always_render_exc=False)
+        return record
+
+    factory._redacts_telegram_token = True  # type: ignore[attr-defined]
+    logging.setLogRecordFactory(factory)
+
+
 def _install_telegram_token_log_filter() -> None:
+    _install_record_factory()
     filt = _RedactTelegramBotTokenFilter()
     for name in ("httpx", "httpcore"):
         logger = logging.getLogger(name)
