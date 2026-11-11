@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import re
 import sys
@@ -45,7 +46,7 @@ class _RedactTelegramBotTokenFilter(logging.Filter):
     """Scrub bot tokens from stdlib log records (httpx INFO URLs, tracebacks)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
-        _scrub_record(record)
+        _redact_or_placeholder(record)
         return True
 
 
@@ -77,25 +78,57 @@ def _scrub_record(record: logging.LogRecord, always_render_exc: bool = True) -> 
         record.exc_text = redact_telegram_token(record.exc_text)
 
 
-def _install_record_factory() -> None:
-    """Scrub at record creation (X2): redaction no longer depends on which handler or logger
-    filter exists, so a handler added after configure_logging() still sees clean records.
-    Unrelated records keep their exc_info; only a traceback that carried a token is flattened."""
-    current = logging.getLogRecordFactory()
-    if getattr(current, "_redacts_telegram_token", False):
+_STANDARD_ATTRS = frozenset(vars(logging.LogRecord("", 0, "", 0, "", (), None))) | {
+    "message",
+    "asctime",
+    "taskName",
+}
+
+
+def _scrub_extra(value):
+    """Scrub a stdlib `extra` value; objects are stringified only when a token shows."""
+    if isinstance(value, (str, dict, list, tuple)):
+        return _scrub_value(value)
+    return _scrub_arg(value)
+
+
+def _scrub_extras(record: logging.LogRecord) -> None:
+    for key in [k for k in vars(record) if k not in _STANDARD_ATTRS]:
+        setattr(record, key, _scrub_extra(getattr(record, key)))
+
+
+def _redact_or_placeholder(record: logging.LogRecord) -> None:
+    """Redact in place. If redaction itself fails, replace content with a placeholder."""
+    try:
+        _scrub_record(record, always_render_exc=False)
+        _scrub_extras(record)
+    except Exception:  # noqa: BLE001 - redaction must never raise into the caller
+        record.msg, record.args = _REDACTED, None
+        record.exc_info, record.exc_text = None, None
+        for key in [k for k in vars(record) if k not in _STANDARD_ATTRS]:
+            setattr(record, key, _REDACTED)
+
+
+def _install_handler_boundary() -> None:
+    """Redact at the output boundary (X2 fix round). Handler.handle runs only for records a
+    handler will actually emit, so logging stays lazy; it sees `extra` fields (added after any
+    record factory) and covers handlers installed after configure_logging(). A shallow copy is
+    scrubbed so the caller's record and other handlers' view are untouched."""
+    original = logging.Handler.handle
+    if getattr(original, "_redacts_telegram_token", False):
         return
 
-    def factory(*args, **kwargs):
-        record = current(*args, **kwargs)
-        _scrub_record(record, always_render_exc=False)
-        return record
+    def handle(self, record):
+        safe = copy.copy(record)
+        _redact_or_placeholder(safe)
+        return original(self, safe)
 
-    factory._redacts_telegram_token = True  # type: ignore[attr-defined]
-    logging.setLogRecordFactory(factory)
+    handle._redacts_telegram_token = True  # type: ignore[attr-defined]
+    logging.Handler.handle = handle  # type: ignore[method-assign]
 
 
 def _install_telegram_token_log_filter() -> None:
-    _install_record_factory()
+    _install_handler_boundary()
     filt = _RedactTelegramBotTokenFilter()
     for name in ("httpx", "httpcore"):
         logger = logging.getLogger(name)
