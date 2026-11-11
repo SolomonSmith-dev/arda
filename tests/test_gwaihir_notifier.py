@@ -99,3 +99,28 @@ def test_log_filter_scrubs_traceback_and_structlog_events(caplog, monkeypatch, c
 
     event = _redact_event_dict(None, "error", {"exc": f"bot{token}/x", "n": [f"/bot{token}/y"]})
     assert token not in repr(event)
+
+
+def test_child_logger_record_is_redacted_at_the_handler(monkeypatch):
+    """X1 G1: logger filters skip records from child loggers (httpcore.http11); the handler sees them all."""
+    import io
+
+    token = "123456789:AAHexample-bot-token_secret"
+    monkeypatch.setattr("core.logging.settings.telegram_bot_token", token)
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root = logging.getLogger()
+    root.addHandler(handler)
+    old_level = root.level
+    root.setLevel(logging.DEBUG)
+    try:
+        configure_logging()
+        logging.getLogger("httpcore.http11").debug("send GET /bot%s/sendMessage", token)
+    finally:
+        root.removeHandler(handler)
+        root.setLevel(old_level)
+
+    out = stream.getvalue()
+    assert "sendMessage" in out
+    assert token not in out
+    assert "<redacted>" in out

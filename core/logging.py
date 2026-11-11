@@ -45,6 +45,16 @@ class _RedactTelegramBotTokenFilter(logging.Filter):
     """Scrub bot tokens from stdlib log records (httpx INFO URLs, tracebacks)."""
 
     def filter(self, record: logging.LogRecord) -> bool:
+        # Redact the formatted message so a token split across template and args,
+        # or a "/bot%s/" template, cannot break formatting or slip through.
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 - a malformed record must still be scrubbed
+            message = None
+        if message is not None:
+            scrubbed = redact_telegram_token(message)
+            if scrubbed != message:
+                record.msg, record.args = scrubbed, None
         if isinstance(record.msg, str):
             record.msg = redact_telegram_token(record.msg)
         if isinstance(record.args, dict):
@@ -68,6 +78,11 @@ def _install_telegram_token_log_filter() -> None:
         logger = logging.getLogger(name)
         if not any(isinstance(f, _RedactTelegramBotTokenFilter) for f in logger.filters):
             logger.addFilter(filt)
+    # Logger filters skip records that child loggers (httpcore.http11) propagate up.
+    # Handler filters see every record, so also guard each root handler (X1 G1).
+    for handler in logging.getLogger().handlers:
+        if not any(isinstance(f, _RedactTelegramBotTokenFilter) for f in handler.filters):
+            handler.addFilter(filt)
 
 
 def _redact_event_dict(_logger, _name, event_dict):
