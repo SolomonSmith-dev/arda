@@ -9,7 +9,7 @@ from __future__ import annotations
 import httpx
 
 from core.config import settings
-from core.logging import get_logger
+from core.logging import get_logger, redact_telegram_token
 
 log = get_logger("agents.gwaihir.notifier")
 
@@ -19,6 +19,11 @@ SEND_TIMEOUT_SECONDS = 10
 
 class TelegramNotConfiguredError(RuntimeError):
     """Raised when send_message is called without TELEGRAM_BOT_TOKEN set."""
+
+
+def safe_exc_text(exc: BaseException) -> str:
+    """Exception text with Telegram bot tokens removed, safe to log or store."""
+    return redact_telegram_token(str(exc))
 
 
 def _api_url(token: str, method: str) -> str:
