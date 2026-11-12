@@ -41,7 +41,7 @@ dependencies = [
     # Revisit when llama-index-llms-anthropic supports anthropic 1.x.
     "anthropic>=0.40,<1",
     "langgraph>=0.2",
-    "langgraph-checkpoint-sqlite>=2.0",
+    "langgraph-checkpoint-sqlite>=3.1.2",
 
     # RAG (Finrod). HuggingFace embedding integration is heavy
     # (pulls torch + transformers); it lives in the `[full]` extra
@@ -104,13 +104,13 @@ dev = [
 # it. Installing this alone gets genuine retrieval against the in-process
 # SimpleVectorStore. See AGENTS.md "The deploy host CPU is pre-2010".
 embeddings = [
-    "sentence-transformers>=3.0",
+    "sentence-transformers>=6.3.0",
     "llama-index-embeddings-huggingface>=0.7",
 ]
 
 # Everything in `[embeddings]` plus the Milvus vector store.
 full = [
-    "sentence-transformers>=3.0",
+    "sentence-transformers>=6.3.0",
     "pymilvus>=2.4",
     "llama-index-embeddings-huggingface>=0.7",
     "llama-index-vector-stores-milvus>=1.1",
