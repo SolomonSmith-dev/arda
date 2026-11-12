@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Copy, never hardlink, from the uv cache: the pathsec guard refuses multiply-linked
+# files, and llama_index's bundled NLTK stopwords are read at ingest time.
+env:
+  UV_LINK_MODE: copy
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
