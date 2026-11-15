@@ -10,6 +10,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   review:
+    # Dependabot PRs get no repository secrets, so the review has no API key
+    # and fails. Dependency bumps are covered by the lint-and-test job.
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
