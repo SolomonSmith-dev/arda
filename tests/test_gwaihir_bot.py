@@ -216,6 +216,43 @@ def test_handle_update_replies_with_error_when_api_fails(monkeypatch):
     assert "agent error" in sent["body"]
 
 
+def test_handle_update_redacts_bot_token_on_send_failure(monkeypatch):
+    token = "123456789:AAHexample-bot-token_secret"
+    monkeypatch.setattr("agents.gwaihir.bot.settings.telegram_allowed_chat_ids", "42")
+    monkeypatch.setattr("agents.gwaihir.notifier.settings.telegram_bot_token", token)
+
+    api_client = _api_client_returning(
+        {
+            "status": "completed",
+            "results": [
+                {
+                    "task_id": "t1",
+                    "status": "completed",
+                    "output": {"stdout": "ok", "stderr": "", "exit_code": 0},
+                    "error": None,
+                }
+            ],
+        }
+    )
+
+    def telegram_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, json={"ok": False, "description": "Forbidden"})
+
+    telegram_client = httpx.Client(transport=httpx.MockTransport(telegram_handler))
+    logged: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        "agents.gwaihir.bot.log.error",
+        lambda event, **kw: logged.append((event, kw)),
+    )
+
+    update = {"update_id": 1, "message": {"chat": {"id": 42}, "text": "hi"}}
+    _handle_update(api_client, telegram_client, token, update)
+
+    assert logged and logged[-1][0] == "telegram_send_failed"
+    assert token not in logged[-1][1]["exc"]
+    assert "/bot<redacted>/" in logged[-1][1]["exc"]
+
+
 # ----- /audit (Rúmil, #66) ------------------------------------------------
 
 
