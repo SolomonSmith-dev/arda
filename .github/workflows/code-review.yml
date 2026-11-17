@@ -4,11 +4,6 @@ on:
     types: [opened, synchronize, reopened]
 permissions:
   contents: read
-  pull-requests: write
-  # Lets the job ask GitHub for a short-lived OIDC token, which is exchanged
-  # for an Anthropic access token (workload identity federation). No API key
-  # is stored in this repository.
-  id-token: write
 concurrency:
   group: code-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -22,6 +17,13 @@ jobs:
       github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      # Lets this job (only) ask GitHub for a short-lived OIDC token, which is
+      # exchanged for an Anthropic access token (workload identity
+      # federation). No API key is stored in this repository.
+      id-token: write
     steps:
       - name: Get a short-lived Anthropic token
         id: anthropic
@@ -38,21 +40,24 @@ jobs:
             exit 1
           fi
           # 1. GitHub's OIDC token for this job, audience api.anthropic.com.
-          jwt=$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          jwt=$(curl -fsS --max-time 30 -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
                   "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r .value)
           echo "::add-mask::$jwt"
           # The claims the federation rule matches on, for diagnosing a 401.
           # Run metadata only; the signed token itself stays masked.
-          payload=$(printf '%s' "$jwt" | cut -d. -f2 | tr '_-' '/+')
-          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
-          printf '%s' "$payload" | base64 -d \
-            | jq -c '{sub, aud, event_name, repository, repository_owner_id, workflow_ref, ref}'
+          # Never fatal: the exchange below does not depend on it.
+          {
+            payload=$(printf '%s' "$jwt" | cut -d. -f2 | tr '_-' '/+')
+            while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+            printf '%s' "$payload" | base64 -d 2>/dev/null \
+              | jq -c '{sub, aud, event_name, repository, repository_owner_id, workflow_ref, ref}'
+          } || echo "::notice::Could not decode the OIDC claims for diagnostics"
           # 2. Exchange it for an Anthropic access token (jwt-bearer grant).
           body=$(jq -n --arg a "$jwt" --arg r "$RULE_ID" --arg o "$ORG_ID" --arg w "$WORKSPACE_ID" \
             '{grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: $a,
               federation_rule_id: $r, organization_id: $o}
              + (if $w == "" then {} else {workspace_id: $w} end)')
-          resp=$(curl -sS -w '\n%{http_code}' https://api.anthropic.com/v1/oauth/token \
+          resp=$(curl -sS --max-time 30 -w '\n%{http_code}' https://api.anthropic.com/v1/oauth/token \
                    -H 'content-type: application/json' \
                    -H 'anthropic-beta: oauth-2025-04-20,oidc-federation-2026-04-01' \
                    -d "$body")
