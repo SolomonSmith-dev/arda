@@ -10,16 +10,18 @@ Console > **Workload identity** (`platform.claude.com/settings/workload-identity
 
 | Field | Value |
 |---|---|
-| Issuer | `https://token.actions.githubusercontent.com` (prefilled) |
-| Audience | `https://api.anthropic.com` |
-| Subject | `repo:SolomonSmith-dev/arda:pull_request` (exact match, no `*`) |
-| Claims | `repository` = `SolomonSmith-dev/arda`, `event_name` = `pull_request` |
+| Issuer | GitHub Actions (`https://token.actions.githubusercontent.com`) |
+| Rule name | `arda-pr-review` |
+| GitHub organization | `SolomonSmith-dev` |
+| Repository | `arda` |
+| Branch / ref | blank (pull request runs use `refs/pull/<n>/merge`) |
+| Allowed events | **Any event** (the wizard offers only "Only push" or "Any event"; the review runs on `pull_request`, so "Only push" always fails) |
 | Service account | new, e.g. `arda-ci` |
 | Workspace | one workspace that has a spend limit |
 | Scope (Advanced rule options) | `workspace:inference` |
 | Token lifetime | 600 seconds |
 
-Optional, tighter: a condition that only this workflow file may use the rule, `claims.workflow_ref.startsWith("SolomonSmith-dev/arda/.github/workflows/code-review.yml@")`. Check the expression with the wizard's test before saving.
+Then narrow it if the rule offers a claims or condition field (in Advanced options or on the rule's page after creation): `event_name` = `pull_request`. Without it, the repository pin still holds: fork pull requests get no OIDC token on `pull_request`, and only people with write access can add workflows that request one. Never add a `pull_request_target` or `workflow_run` workflow with `id-token: write` while the rule allows any event.
 
 Note the rule ID (`fdrl_...`) and the organization ID (Console > Settings > Organization).
 
