@@ -1,0 +1,8 @@
+#!/bin/bash
+# Stub: runs the command as this user, with /etc and the keyring dir under $H/root.
+echo "sudo $*" >> "$H/state/calls.log"
+args=()
+for a in "$@"; do
+  case "$a" in /etc/*|/usr/share/keyrings*) args+=("$H/root$a") ;; *) args+=("$a") ;; esac
+done
+exec "${args[@]}"

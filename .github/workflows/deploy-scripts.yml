@@ -1,0 +1,43 @@
+name: Deploy scripts
+
+# End-to-end dry run of deploy/demo/deploy.sh and teardown.sh against stubs
+# (tests/deploy). About four minutes, so it runs only when they can change.
+on:
+  pull_request:
+    paths:
+      - deploy/demo/**
+      - tests/deploy/**
+      - api/demo.py
+      - core/demo.py
+      - .github/workflows/deploy-scripts.yml
+  push:
+    branches: [main]
+    paths:
+      - deploy/demo/**
+      - tests/deploy/**
+      - api/demo.py
+      - core/demo.py
+
+permissions:
+  contents: read
+
+env:
+  UV_LINK_MODE: copy
+
+concurrency:
+  group: deploy-scripts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --extra dev
+      - name: Harness
+        run: RUN_DEPLOY_HARNESS=1 uv run pytest tests/deploy -v
