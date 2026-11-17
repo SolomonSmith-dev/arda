@@ -4,7 +4,7 @@ Target: your Debian home server, API on loopback, Cloudflare Tunnel in front. No
 
 What runs: one container (`api`) in demo mode, a separate compose project (`arda-demo`) on port 5001, so it cannot collide with a production ARDA on 5000. No Redis, worker or scheduler start. Shell execution is refused in three layers (router allowlist, Earendil agent, worker).
 
-**Shortcut:** `deploy/demo/deploy.sh` runs steps 1 to 18 in order with their done checks, stops at the first FAIL, skips steps already done (so a rerun resumes), and pauses only for the key, the spend limit, the Cloudflare login and the rate-limit rule. Usage: clone as in step 2, then `bash ~/arda-demo/deploy/demo/deploy.sh` (or pass a branch name). The steps below are what it runs, with three differences: it restarts the app before steps 7 and 17 so the in-memory limiter is fresh on a rerun, it checks DNS against 1.1.1.1 over HTTPS (the server's own cache may hold a "not found" from before the record existed), and it refuses to overwrite an `/etc/cloudflared/config.yml` that belongs to another tunnel. Options: `REKEY=1` asks for the Anthropic key again; `OVERWRITE_DNS=1` lets step 12 replace a leftover DNS record from an earlier `arda-demo` tunnel.
+**Shortcut:** `deploy/demo/deploy.sh` runs steps 1 to 18 in order with their done checks, stops at the first FAIL, skips steps already done (so a rerun resumes), and pauses only for the key, the spend limit, the Cloudflare login and the rate-limit rule. Usage: clone as in step 2, then `bash ~/arda-demo/deploy/demo/deploy.sh` (or pass a branch name). The steps below are what it runs, with three differences: it restarts the app before steps 7 and 17 so the in-memory limiter is fresh on a rerun, it checks DNS against 1.1.1.1 over HTTPS (the server's own cache may hold a "not found" from before the record existed), and step 12 fails at once if the record lands under another domain. Options: `REKEY=1` asks for the Anthropic key again; `OVERWRITE_DNS=1` lets step 12 replace a leftover DNS record from an earlier `arda-demo` tunnel.
 
 Conventions: every step has **Run**, **Expect**, and **Done check**. A done check prints `PASS` only when the condition holds and prints nothing (or `FAIL`) otherwise. Commands that read secrets never echo them.
 
@@ -164,17 +164,28 @@ sudo apt-get update && sudo apt-get install -y cloudflared
 cloudflared --version >/dev/null 2>&1 && echo PASS || echo FAIL
 ```
 
-## 10. Log in to Cloudflare
+## 10. Log in to Cloudflare (a login for the demo only)
+
+The demo keeps its own Cloudflare login, tunnel config and service, so a server that already runs cloudflared for something else is never touched:
+
+| | Demo | Left alone |
+|---|---|---|
+| Login | `~/.cloudflared/arda-demo-cert.pem` | `~/.cloudflared/cert.pem` |
+| Config | `/etc/cloudflared/arda-demo.yml` | `/etc/cloudflared/config.yml` |
+| Service | `cloudflared-arda-demo` | `cloudflared` |
+
+Every `cloudflared` command in steps 11 and 12 must use the demo login, so set it once in this shell.
 
 **Run**
 ```bash
-cloudflared tunnel login
+tmp=$(mktemp -d) && HOME="$tmp" cloudflared tunnel login && install -m 600 "$tmp/.cloudflared/cert.pem" ~/.cloudflared/arda-demo-cert.pem && rm -rf "$tmp"
+export TUNNEL_ORIGIN_CERT=~/.cloudflared/arda-demo-cert.pem
 ```
-**Expect** a URL in the terminal. Open it on your laptop, choose the `solomonsmith.dev` zone, and authorize. The terminal then prints `You have successfully logged in`.
+**Expect** a URL in the terminal. Open it on your laptop, choose the `solomonsmith.dev` zone, and authorize. The terminal then prints `You have successfully logged in`. (cloudflared refuses to overwrite an existing `cert.pem`, so it logs in under a scratch `HOME` and the file is moved.)
 
 **Done check**
 ```bash
-test -s ~/.cloudflared/cert.pem && echo PASS || echo FAIL
+test -s ~/.cloudflared/arda-demo-cert.pem && [ "$TUNNEL_ORIGIN_CERT" = ~/.cloudflared/arda-demo-cert.pem ] && echo PASS || echo FAIL
 ```
 
 ## 11. Create the tunnel
@@ -187,7 +198,7 @@ cloudflared tunnel create arda-demo
 
 **Run** (capture the id for later steps)
 ```bash
-TUNNEL_ID=$(cloudflared tunnel list -o json | python3 -c 'import sys,json; print([t["id"] for t in json.load(sys.stdin) if t["name"]=="arda-demo"][0])')
+TUNNEL_ID=$(cloudflared tunnel list -o json | python3 -c 'import sys,json; print([t["id"] for t in (json.load(sys.stdin) or []) if t["name"]=="arda-demo"][0])')
 echo "$TUNNEL_ID"
 ```
 
@@ -203,11 +214,11 @@ Keep this shell open, or rerun the capture command before step 13.
 ```bash
 cloudflared tunnel route dns arda-demo arda.solomonsmith.dev
 ```
-**Expect** `Added CNAME arda.solomonsmith.dev which will route to this tunnel`.
+**Expect** `Added CNAME arda.solomonsmith.dev which will route to this tunnel`. If the name in that line has another domain on the end (`arda.solomonsmith.dev.example.com`), the login is for the wrong zone: delete that record in the Cloudflare dashboard, `rm ~/.cloudflared/arda-demo-cert.pem`, and redo step 10 choosing `solomonsmith.dev`.
 
-**Done check** (the name resolves; it will answer with Cloudflare addresses)
+**Done check** (asks 1.1.1.1 directly, so this server's DNS cache can't answer from before the record existed)
 ```bash
-getent hosts arda.solomonsmith.dev >/dev/null && echo PASS || echo "FAIL: DNS not visible yet, wait a minute and retry"
+curl -s -H 'accept: application/dns-json' 'https://cloudflare-dns.com/dns-query?name=arda.solomonsmith.dev&type=A' | /usr/bin/grep -q '"Answer"' && echo PASS || echo "FAIL: DNS not visible yet, wait a minute and retry"
 ```
 
 ## 13. Install the tunnel config
@@ -218,29 +229,45 @@ cd ~/arda-demo
 sudo mkdir -p /etc/cloudflared
 sudo /bin/cp -f ~/.cloudflared/$TUNNEL_ID.json /etc/cloudflared/$TUNNEL_ID.json
 sudo chmod 600 /etc/cloudflared/$TUNNEL_ID.json
-sed "s/TUNNEL_ID/$TUNNEL_ID/g" deploy/demo/cloudflared-config.yml.template | sudo tee /etc/cloudflared/config.yml >/dev/null
+sed "s/TUNNEL_ID/$TUNNEL_ID/g" deploy/demo/cloudflared-config.yml.template | sudo tee /etc/cloudflared/arda-demo.yml >/dev/null
 ```
 **Expect** no output.
 
 **Done check** (the template placeholder is gone and cloudflared accepts the file)
 ```bash
-[ "$(sudo /usr/bin/grep -c TUNNEL_ID /etc/cloudflared/config.yml)" = 0 ] && sudo cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate 2>&1 | /usr/bin/grep -q 'OK' && echo PASS || echo FAIL
+[ "$(sudo /usr/bin/grep -c TUNNEL_ID /etc/cloudflared/arda-demo.yml)" = 0 ] && sudo cloudflared tunnel --config /etc/cloudflared/arda-demo.yml ingress validate 2>&1 | /usr/bin/grep -q 'OK' && echo PASS || echo FAIL
 ```
 
-## 14. Run the tunnel as a service
+## 14. Run the tunnel as its own service
+
+Not `cloudflared service install`: that manages the single `cloudflared.service`, which another tunnel on the server may already use.
 
 **Run**
 ```bash
-sudo cloudflared --config /etc/cloudflared/config.yml service install
-sudo systemctl enable --now cloudflared
-```
-**Expect** `systemctl status cloudflared` shows `active (running)`.
+sudo tee /etc/systemd/system/cloudflared-arda-demo.service >/dev/null <<UNIT
+[Unit]
+Description=Cloudflare Tunnel for the ARDA public demo (arda-demo)
+After=network-online.target
+Wants=network-online.target
 
-**Done check** (the journal must show a registered connection; `journalctl` runs without sudo, which needs your user in the `systemd-journal` or `adm` group)
-```bash
-[ "$(systemctl is-active cloudflared)" = active ] && [ "$(journalctl -u cloudflared --since '3 min ago' --no-pager | /usr/bin/grep -c 'Registered tunnel connection')" -ge 1 ] && echo PASS || echo FAIL
+[Service]
+Type=notify
+ExecStart=$(command -v cloudflared) --no-autoupdate --config /etc/cloudflared/arda-demo.yml tunnel run
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable --now cloudflared-arda-demo
 ```
-If the count is 0 and the service is active, check `id -nG` includes `systemd-journal` or `adm`.
+**Expect** `systemctl status cloudflared-arda-demo` shows `active (running)`.
+
+**Done check** (the journal must show a registered connection)
+```bash
+[ "$(systemctl is-active cloudflared-arda-demo)" = active ] && [ "$(sudo journalctl -u cloudflared-arda-demo --since '3 min ago' --no-pager | /usr/bin/grep -c 'Registered tunnel connection')" -ge 1 ] && echo PASS || echo FAIL
+```
 
 ## 15. Test from outside your network
 
@@ -337,7 +364,7 @@ On macOS use `sed -i ''` instead of `sed -i`.
 | Today's token budget left | `curl -s localhost:5001/demo/status` (field `tokens_remaining_today`) |
 | Recent counts (no content) | `docker logs --since 1h arda-demo-api-1 2>&1 \| /usr/bin/grep demo_request` |
 | Update | `cd ~/arda-demo && git pull && docker compose -p arda-demo -f docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d --build api` |
-| Stop taking traffic | `sudo systemctl stop cloudflared` |
+| Stop taking traffic | `sudo systemctl stop cloudflared-arda-demo` |
 | Tear down the app only | `docker compose -p arda-demo down` |
 | Health check from anywhere (no tokens) | `bash deploy/demo/check.sh` |
 | Take the whole demo down | `bash ~/arda-demo/deploy/demo/teardown.sh`: stops and removes the tunnel service, its config and credentials, deletes the tunnel, waits while you delete the DNS record (cloudflared cannot, and deleting a tunnel leaves its CNAME behind), removes the container and image, offers to delete `.env.demo`. Refuses to touch a cloudflared setup for another tunnel. Reruns resume. |
