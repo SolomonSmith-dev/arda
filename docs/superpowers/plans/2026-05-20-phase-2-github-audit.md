@@ -1205,7 +1205,7 @@ gh pr merge --merge
 
 ```bash
 # On home server:
-cd /home/solomon/Code/arda-stack/arda
+cd /path/to/arda
 git pull origin main
 docker compose build --no-cache api
 

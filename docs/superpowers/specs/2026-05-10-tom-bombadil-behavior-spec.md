@@ -424,7 +424,7 @@ When a backend dependency degrades, Tom's user-facing behavior should be:
 
 ### 5.5 Operator surface
 
-Solomon (the bot owner) has admin actions beyond what slash commands expose. All require shell access to home-server.
+Solomon (the bot owner) has admin actions beyond what slash commands expose. All require shell access to `<server-host>`.
 
 | Action | Invocation |
 |---|---|

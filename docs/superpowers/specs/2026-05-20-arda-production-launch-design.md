@@ -75,7 +75,7 @@ four-file pattern with different tools.
 refactors. They must be rebuilt from the current `arda:0.3.0` image.
 
 ```bash
-cd /home/solomon/Code/arda-stack/arda
+cd /path/to/arda
 docker compose up -d --force-recreate worker gwaihir
 ```
 
@@ -101,7 +101,7 @@ will idle cleanly until Phase 2 seeds the GitHub audit job.
 
 Check the home server `.env`:
 ```bash
-grep CLAUDE_API_KEY /home/solomon/Code/arda-stack/arda/.env
+grep CLAUDE_API_KEY /path/to/arda/.env
 ```
 
 If missing or empty, set it. No code change needed -- the fallback to
@@ -119,7 +119,7 @@ GITHUB_TOKEN=
 GITHUB_USERNAME=SolomonSmith-dev
 ```
 
-Set the actual token in `/home/solomon/Code/arda-stack/arda/.env` on the
+Set the actual token in `/path/to/arda/.env` on the
 home server.
 
 ### 1.5 End-to-end smoke test
@@ -388,7 +388,7 @@ understand the data flow, and trace it to the code in under 5 minutes.
 
 2. **Resume canonical path:**
    - MacBook (source of truth): `~/Areas/admin/career/MATERIALS/Solomon_Smith_Resume.pdf`
-   - Home server (ARDA reads): `/home/solomon/Code/arda-stack/arda/data/resume/Solomon_Smith_Resume.pdf`
+   - Home server (ARDA reads): `/path/to/arda/data/resume/Solomon_Smith_Resume.pdf`
    - Docker volume: `./data/resume:/app/data/resume:ro` mounted on the api and galadriel services
    - `data/resume/` is gitignored. A one-time `scp` copies the PDF to the server on deploy. When the resume is updated, re-run the scp.
    - PDF text extraction via `pdfplumber` (add to `pyproject.toml`). Extract once at load time; cache as plain text for LLM input.

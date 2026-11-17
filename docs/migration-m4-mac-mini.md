@@ -1,7 +1,7 @@
-# Migration plan: home-server → M4/M5 Mac Mini
+# Migration plan: `<server-host>` → M4/M5 Mac Mini
 
-ARDA currently runs on `home-server` (Debian 12, Intel Core 2 Duo P8600,
-7.5GB RAM, x86_64) at Tailscale `100.112.3.116:5000`. This document is
+ARDA currently runs on `<server-host>` (Debian 12, Intel Core 2 Duo P8600,
+7.5GB RAM, x86_64) at Tailscale `<tailnet-ip>:5000`. This document is
 the runbook for moving the deployment to a future M4/M5 Mac Mini
 (macOS, Apple Silicon arm64, 16GB+).
 
@@ -34,14 +34,14 @@ needs one fresh image build, nothing more.
 - Headroom: 7.5GB → 16GB+. This unblocks Phase 6 work
   (real `sentence-transformers`, real Milvus, LLM-based planner).
 
-## Pre-migration checklist (do this on home-server, not the new box)
+## Pre-migration checklist (do this on `<server-host>`, not the new box)
 
 1. **Snapshot current state.** Most ARDA data is ephemeral, but record
    what's there so we can verify parity post-cutover:
 
    ```bash
-   ssh solomon@home-server <<'EOF'
-   docker compose -f ~/Code/arda-stack/arda/docker-compose.yml ps
+   ssh <user>@<server-host> <<'EOF'
+   docker compose -f /path/to/arda/docker-compose.yml ps
    docker exec arda-redis-1 redis-cli dbsize
    docker exec arda-redis-1 redis-cli --scan --pattern 'task:*' | wc -l
    docker exec arda-redis-1 redis-cli --scan --pattern 'film:*' | wc -l
@@ -81,8 +81,8 @@ docker --version          # should report podman/orb-backed docker
 # Tailscale (if not already installed)
 brew install --cask tailscale
 open -a Tailscale         # log in, accept the device into the tailnet
-# In the Tailscale admin console: take the 100.112.3.116 IP off the
-# old home-server device and give it to the new Mac Mini, OR pick a
+# In the Tailscale admin console: take the <tailnet-ip> IP off the
+# old <server-host> device and give it to the new Mac Mini, OR pick a
 # new IP and update the MCP server config on the dev box.
 ```
 
@@ -121,7 +121,7 @@ and are fast. Edit `Dockerfile` line 24 from `pip install -e .` to
 ### 3. Build + smoke
 
 ```bash
-docker compose build api          # ~5 min on M4 vs ~13 min on home-server
+docker compose build api          # ~5 min on M4 vs ~13 min on <server-host>
 docker compose up -d
 sleep 8
 docker compose ps
@@ -131,7 +131,7 @@ curl -s http://localhost:5000/health
 
 Expect 4 containers (redis + api + worker + redis) all healthy. If
 the Tailscale IP is the new Mac Mini's IP, you should also be able
-to hit it from your dev box at `http://100.112.3.116:5000/health`.
+to hit it from your dev box at `http://<tailnet-ip>:5000/health`.
 
 ### 4. Verify the contract holds
 
@@ -186,13 +186,13 @@ DISCORD_TOKEN=$(security find-generic-password -a arda -s discord-token -w) \
 docker compose logs -f tombombadil   # wait for bot_ready
 ```
 
-## On home-server (decommission)
+## On `<server-host>` (decommission)
 
 Only after the new Mac Mini is verified end-to-end:
 
 ```bash
-ssh solomon@home-server <<'EOF'
-cd ~/Code/arda-stack/arda
+ssh <user>@<server-host> <<'EOF'
+cd /path/to/arda
 docker compose --profile discord down
 docker image rm arda:0.3.0
 # Optional: remove the source if you're sure
@@ -200,19 +200,19 @@ docker image rm arda:0.3.0
 EOF
 ```
 
-The legacy `redis-server.service` on home-server can stay running if
+The legacy `redis-server.service` on `<server-host>` can stay running if
 other services on that host depend on it. ARDA's compose stack used
-its own isolated Redis, so nothing on home-server depended on the
+its own isolated Redis, so nothing on `<server-host>` depended on the
 ARDA containers.
 
 ## Rollback
 
 If the new Mac Mini deployment fails verification:
 
-1. Reassign the `100.112.3.116` Tailscale IP back to home-server in
+1. Reassign the `<tailnet-ip>` Tailscale IP back to <server-host> in
    the admin console.
-2. `ssh solomon@home-server 'docker compose -f ~/Code/arda-stack/arda/docker-compose.yml up -d'`
-   (the home-server stack is left intact during this migration —
+2. `ssh <user>@<server-host> 'docker compose -f /path/to/arda/docker-compose.yml up -d'`
+   (the `<server-host>` stack is left intact during this migration —
    we only tear it down after verification).
 3. MCP client on the dev box still points at the same IP, so no
    client-side changes needed.
@@ -220,7 +220,7 @@ If the new Mac Mini deployment fails verification:
 ## Post-migration upgrades unlocked
 
 The M4's headroom enables three follow-ups that were impractical on
-home-server:
+`<server-host>`:
 
 1. **Real semantic embeddings**: `[full]` extra + `USE_MOCK_EMBEDDER=false`.
    Replaces hash-based MockEmbedder with `sentence-transformers/all-MiniLM-L6-v2`
