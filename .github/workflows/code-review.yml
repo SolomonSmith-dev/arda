@@ -1,7 +1,9 @@
 name: AI code review
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # Paused 2026-11-17: this job bills the paid Anthropic API (ANTHROPIC_API_KEY).
+  # Solomon turned API spend off. Run by hand only; restore the pull_request
+  # trigger to re-enable.
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
