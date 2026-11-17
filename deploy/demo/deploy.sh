@@ -232,17 +232,45 @@ pass "no visitor text in logs"
 
 # ---------------------------------------------------------------- 16. rate limit
 step "16. Per-address limit"
-c=""
-for _ in $(seq 1 12); do c=$(code -X POST "$PUBLIC/demo/ask" -H 'content-type: application/json' -d '{"message":"hi"}'); done
-[ "$c" = 429 ] || fail "not limited: check DEMO_TRUST_CF_HEADER and the loopback bind"
-pass "app limiter returns 429"
+# Paced at one request per 2.5 s so the Cloudflare edge rule from step 18 (5 per
+# 10 s) never fires here on a rerun: every 429 below must come from the app.
+body=""
+for _ in $(seq 1 12); do
+  body=$(curl -s -X POST "$PUBLIC/demo/ask" -H 'content-type: application/json' -d '{"message":"hi"}')
+  sleep 2.5
+done
+echo "$body" | $GREP -q 'rate limit reached for this address' \
+  || fail "not limited by the app: check DEMO_TRUST_CF_HEADER and the loopback bind"
+pass "app limiter returns 429 after 10 requests"
 
 # ---------------------------------------------------------------- 18. edge rule
 step "18. Cloudflare rate-limit rule (required)"
-echo "Cloudflare dashboard, zone solomonsmith.dev, Security, WAF, Rate limiting rules:"
-echo '  match: http.host eq "arda.solomonsmith.dev" and http.request.uri.path eq "/demo/ask"'
-echo "  per IP, action Block. Use the longest period and threshold your plan allows."
-confirm "Rule shows as Active?"
+cat <<'HELP'
+Cloudflare dashboard > solomonsmith.dev > Security > WAF > Rate limiting rules > Create rule.
+Free plan allows one rule, path-only matching, 10 s windows:
+  Rule name:              arda-demo ask
+  If incoming requests match: Field "URI Path", Operator "equals", Value "/demo/ask"
+                          (expression: http.request.uri.path eq "/demo/ask")
+  With the same characteristics: IP
+  When rate exceeds:      5 requests per 10 seconds
+  Then take action:       Block, for 10 seconds
+Deploy, then come back here.
+HELP
+confirm "Rule deployed?"
+# Empty messages fail validation (422) before the limiter and the model, so this
+# burst spends no tokens. A block from the edge is a 429 that is not the app's JSON.
+edge=0
+for _ in $(seq 1 3); do
+  for _ in $(seq 1 15); do
+    r=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' -X POST "$PUBLIC/demo/ask" -H 'content-type: application/json' -d '{"message":""}' || true)
+    case "$r" in 429\ application/json*) ;; 429*) edge=1 ;; esac
+  done
+  [ "$edge" = 1 ] && break
+  sleep 3  # edge counters can lag a few seconds
+done
+[ "$edge" = 1 ] || fail "no edge block after 45 fast requests: check the rule is deployed and matches /demo/ask"
+pass "Cloudflare blocks bursts at the edge"
+sleep 11  # let the 10 s block expire
 
 compose restart api >/dev/null
 timeout 120 sh -c "until [ \"\$(docker inspect -f '{{.State.Health.Status}}' $CONTAINER)\" = healthy ]; do sleep 2; done" \

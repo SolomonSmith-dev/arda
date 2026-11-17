@@ -4,6 +4,8 @@ Target: your Debian home server, API on loopback, Cloudflare Tunnel in front. No
 
 What runs: one container (`api`) in demo mode, a separate compose project (`arda-demo`) on port 5001, so it cannot collide with a production ARDA on 5000. No Redis, worker or scheduler start. Shell execution is refused in three layers (router allowlist, Earendil agent, worker).
 
+**Shortcut:** `deploy/demo/deploy.sh` runs steps 1 to 18 in order with their done checks, stops at the first FAIL, skips steps already done (so a rerun resumes), and pauses only for the key, the spend limit, the Cloudflare login and the rate-limit rule. Usage: clone as in step 2, then `bash ~/arda-demo/deploy/demo/deploy.sh` (or pass a branch name). The steps below are what it runs.
+
 Conventions: every step has **Run**, **Expect**, and **Done check**. A done check prints `PASS` only when the condition holds and prints nothing (or `FAIL`) otherwise. Commands that read secrets never echo them.
 
 Needs: SSH to the server over Tailscale, a Cloudflare account with the `solomonsmith.dev` zone, an Anthropic API key.
@@ -287,9 +289,30 @@ docker logs arda-demo-api-1 2>&1 | /usr/bin/grep -c 'zq-secret-marker-9921'
 ```
 The second half fails if no request was logged at all, so a silent app cannot pass.
 
-## 18. Optional: Cloudflare rate-limit rule
+## 18. Cloudflare rate-limit rule (required)
 
-A second limiter in front of the app. Cloudflare dashboard, zone `solomonsmith.dev`, Security, WAF, Rate limiting rules: match `http.host eq "arda.solomonsmith.dev" and http.request.uri.path eq "/demo/ask"`, 30 requests per 10 minutes per IP, action Block. **Done when** the rule shows as Active.
+A second limiter at the edge. The app's limiter and token budget live in memory and reset on every container restart; this one does not, and it drops bursts before they reach the server.
+
+The Free plan allows one rule, matching on the URI path only (no host field), counted per IP, with a 10 second window and a 10 second block. That shapes the rule: it stops floods, while the app's 10-per-hour limit stays the per-visitor cap.
+
+**Do** Cloudflare dashboard, zone `solomonsmith.dev`, Security, WAF, Rate limiting rules, Create rule:
+
+| Setting | Value |
+|---|---|
+| Match | URI Path equals `/demo/ask` (expression `http.request.uri.path eq "/demo/ask"`) |
+| Characteristics | IP |
+| Rate | 5 requests per 10 seconds |
+| Action | Block, 10 seconds |
+
+**Expect** the rule listed as deployed. The path match covers every hostname in the zone, which is harmless: nothing else serves `/demo/ask`.
+
+**Done check** (empty messages are rejected with 422 before the limiter and the model, so this spends no tokens; an edge block is a 429 that is not the app's JSON)
+```bash
+edge=0; for i in $(seq 1 30); do r=$(curl -s -o /dev/null -w '%{http_code} %{content_type}' -X POST https://arda.solomonsmith.dev/demo/ask -H 'content-type: application/json' -d '{"message":""}'); case "$r" in "429 application/json"*) ;; 429*) edge=1;; esac; done; [ "$edge" = 1 ] && echo PASS || echo "FAIL: no edge block, check the rule"
+```
+Counters are per Cloudflare data center and can lag a few seconds; if it fails right after deploying, wait 30 seconds and rerun. The block lifts after 10 seconds.
+
+After this rule exists, step 16 must pace its requests (more than 2 seconds apart), or the edge blocks it first and the 429s it sees are not the app's.
 
 ## 19. Record the URL
 
