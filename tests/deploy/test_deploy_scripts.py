@@ -95,6 +95,33 @@ def _out(proc: subprocess.CompletedProcess[str]) -> str:
     return proc.stdout + proc.stderr
 
 
+# A tunnel that already serves something else on the host, as on the real home
+# server: the scripts must never read or change any of these.
+PROD_ID = "412dd50f-0000-4000-8000-000000000000"
+PROD_FILES = {
+    "root/etc/cloudflared/config.yml": f"tunnel: {PROD_ID}\ningress:\n  - service: http_status:404\n",
+    f"root/etc/cloudflared/{PROD_ID}.json": '{"TunnelSecret":"prod"}\n',
+    "root/etc/systemd/system/cloudflared.service": "[Service]\nExecStart=/usr/bin/cloudflared tunnel run\n",
+    "state/svc-active-cloudflared": "active\n",
+}
+PROD_LOGIN = "PROD-LOGIN\n"
+
+
+def _install_production_tunnel(h: Path, home: Path) -> None:
+    for rel, text in PROD_FILES.items():
+        (h / rel).parent.mkdir(parents=True, exist_ok=True)
+        (h / rel).write_text(text)
+    (home / ".cloudflared").mkdir(parents=True)
+    (home / ".cloudflared" / "cert.pem").write_text(PROD_LOGIN)
+    (h / "state" / "cloudflared-installed").touch()
+
+
+def _assert_production_untouched(srv: Env) -> None:
+    for rel, text in PROD_FILES.items():
+        assert (srv.h / rel).read_text() == text, rel
+    assert (srv.root / "home/.cloudflared/cert.pem").read_text() == PROD_LOGIN
+
+
 @pytest.fixture(scope="module")
 def srv(tmp_path_factory: pytest.TempPathFactory):
     if not (_port_free(5001) and _port_free(5002)):
@@ -108,6 +135,7 @@ def srv(tmp_path_factory: pytest.TempPathFactory):
     (h / "state").mkdir(parents=True)
     (h / "root" / "etc" / "apt" / "sources.list.d").mkdir(parents=True)
     (root / "home").mkdir()
+    _install_production_tunnel(h, root / "home")
 
     # origin: a bare repo holding HEAD as branch `harness`. CI checkouts are
     # shallow, so let the empty repo accept a shallow push.
@@ -165,6 +193,11 @@ def test_fresh_deploy_passes_every_step(srv: Env) -> None:
     env_file = srv.work / ".env.demo"
     assert oct(env_file.stat().st_mode & 0o777) == "0o600"
     assert f"ANTHROPIC_API_KEY={KEY}" in env_file.read_text()
+    etc = srv.h / "root/etc"
+    assert (etc / "systemd/system/cloudflared-arda-demo.service").exists()
+    assert "tunnel: " in (etc / "cloudflared/arda-demo.yml").read_text()
+    assert (srv.root / "home/.cloudflared/arda-demo-cert.pem").read_text() == "DEMO-LOGIN\n"
+    _assert_production_untouched(srv)
 
 
 def test_key_never_printed_or_logged(srv: Env) -> None:
@@ -178,7 +211,7 @@ def test_rerun_skips_done_steps_and_passes(srv: Env) -> None:
     proc = srv.deploy("yes\nyes\n")
     out = _out(proc)
     assert proc.returncode == 0, out
-    for done in (".env.demo exists", "key present", "cloudflared version", "cert.pem present",
+    for done in (".env.demo exists", "key present", "cloudflared version", "demo login present",
                  "tunnel arda-demo exists"):
         assert f"SKIP (already done): {done}" in out
     assert "PASS: app limits per visitor address (9 allowed, then 429)" in out
@@ -216,11 +249,12 @@ def test_teardown_removes_everything(srv: Env) -> None:
     assert proc.returncode == 0, out
     assert "The demo is down" in out
     etc = srv.h / "root" / "etc"
-    assert not (etc / "systemd/system/cloudflared.service").exists()
-    assert not (etc / "cloudflared/config.yml").exists()
+    assert not (etc / "systemd/system/cloudflared-arda-demo.service").exists()
+    assert not (etc / "cloudflared/arda-demo.yml").exists()
     assert not (srv.state / "tunnels.json").exists()
     assert not (srv.state / "container").exists()
     assert not (srv.work / ".env.demo").exists()
+    _assert_production_untouched(srv)
 
 
 def test_teardown_rerun_skips_everything(srv: Env) -> None:
@@ -230,19 +264,28 @@ def test_teardown_rerun_skips_everything(srv: Env) -> None:
     assert out.count("SKIP (already done)") == 6
 
 
-def test_foreign_cloudflared_config_is_left_alone(srv: Env) -> None:
-    foreign = srv.h / "root/etc/cloudflared/config.yml"
-    foreign.parent.mkdir(parents=True, exist_ok=True)
-    foreign.write_text("tunnel: 11111111-2222-3333-4444-555555555555\n")
-    deploy = srv.deploy(f"{KEY}\nyes\n")
+def test_login_for_another_zone_fails_step_12(srv: Env) -> None:
+    suffix = srv.state / "zone-suffix"
+    suffix.write_text("soloserver.xyz")
+    try:
+        proc = srv.deploy(f"{KEY}\nyes\n")
+    finally:
+        suffix.unlink()
+    assert proc.returncode == 1
+    assert "is a login for a different zone" in _out(proc)
+    _assert_production_untouched(srv)
+
+
+def test_demo_config_for_another_tunnel_is_left_alone(srv: Env) -> None:
+    conf = srv.h / "root/etc/cloudflared/arda-demo.yml"
+    conf.write_text("tunnel: 11111111-2222-3333-4444-555555555555\n")
+    deploy = srv.deploy("yes\n")
     assert deploy.returncode == 1
     assert "belongs to another tunnel; not touching it" in _out(deploy)
-    assert foreign.read_text().startswith("tunnel: 1111")
+    assert conf.read_text().startswith("tunnel: 1111")
 
-    unit = srv.h / "root/etc/systemd/system/cloudflared.service"
-    unit.parent.mkdir(parents=True, exist_ok=True)
-    unit.write_text("[Service]\n")
     teardown = srv.teardown("arda-demo\n")
     assert teardown.returncode == 1
     assert "not the arda-demo tunnel's; leaving it alone" in _out(teardown)
-    assert unit.exists() and foreign.exists()
+    assert conf.exists()
+    _assert_production_untouched(srv)

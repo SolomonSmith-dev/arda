@@ -7,13 +7,18 @@
 # tunnel leaves its CNAME behind), then the app. Every step checks its result and
 # is skipped when already done, so a rerun after a failure finishes the job.
 #
-# It only touches what deploy.sh made: it refuses to remove a cloudflared service
-# or /etc/cloudflared/config.yml that belongs to another tunnel.
+# It only touches what deploy.sh made: the cloudflared-arda-demo service,
+# /etc/cloudflared/arda-demo.yml and the demo's own Cloudflare login. Another
+# tunnel on this host (cloudflared.service, config.yml, cert.pem) is never read
+# or changed, and a demo config that points at another tunnel is refused.
 set -euo pipefail
 {
 HOST="arda.solomonsmith.dev"
 TUNNEL="arda-demo"
 PROJECT="arda-demo"
+CONF="/etc/cloudflared/arda-demo.yml"
+UNIT="cloudflared-arda-demo"
+CERT="$HOME/.cloudflared/arda-demo-cert.pem"
 GREP=/usr/bin/grep
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -30,9 +35,12 @@ echo "This takes https://$HOST offline and deletes the $TUNNEL tunnel and contai
 read -rp "Type $TUNNEL to continue: " ans
 [ "$ans" = "$TUNNEL" ] || fail "not confirmed"
 
+# Every cloudflared command below uses the demo login, never the default one.
+export TUNNEL_ORIGIN_CERT="$CERT"
+
 # ---------------------------------------------------------------- tunnel id
 TUNNEL_ID=""
-if command -v cloudflared >/dev/null && test -s ~/.cloudflared/cert.pem; then
+if command -v cloudflared >/dev/null && test -s "$CERT"; then
   out=$(cloudflared tunnel list -o json) || fail "cloudflared tunnel list failed (login expired?)"
   TUNNEL_ID=$(printf '%s' "$out" | python3 -c '
 import json, sys
@@ -40,36 +48,36 @@ ids = [t["id"] for t in (json.load(sys.stdin) or []) if t.get("name") == sys.arg
 print(ids[0] if ids else "")' "$TUNNEL")
 fi
 # Fall back to the installed config, in case the tunnel was already deleted.
-if [ -z "$TUNNEL_ID" ] && sudo test -f /etc/cloudflared/config.yml; then
-  TUNNEL_ID=$(sudo sed -n 's/^tunnel: \([0-9a-f-]\{36\}\)$/\1/p' /etc/cloudflared/config.yml)
+if [ -z "$TUNNEL_ID" ] && sudo test -f "$CONF"; then
+  TUNNEL_ID=$(sudo sed -n 's/^tunnel: \([0-9a-f-]\{36\}\)$/\1/p' "$CONF")
 fi
 echo "tunnel id: ${TUNNEL_ID:-none found}"
 
 ours_config() {
-  [ -n "$TUNNEL_ID" ] && sudo $GREP -qx "tunnel: $TUNNEL_ID" /etc/cloudflared/config.yml \
-    && sudo $GREP -qx "  - hostname: $HOST" /etc/cloudflared/config.yml
+  [ -n "$TUNNEL_ID" ] && sudo $GREP -qx "tunnel: $TUNNEL_ID" "$CONF" \
+    && sudo $GREP -qx "  - hostname: $HOST" "$CONF"
 }
 
 # ---------------------------------------------------------------- 1. service
-step "1. Stop and remove the tunnel service"
-if ! sudo test -f /etc/systemd/system/cloudflared.service; then
-  skip "no cloudflared.service"
-elif sudo test -f /etc/cloudflared/config.yml && ! ours_config; then
-  fail "cloudflared.service runs a config that is not the $TUNNEL tunnel's; leaving it alone"
+step "1. Stop and remove the $UNIT service"
+if ! sudo test -f "/etc/systemd/system/$UNIT.service"; then
+  skip "no $UNIT service"
 else
-  sudo cloudflared --config /etc/cloudflared/config.yml service uninstall
-  ! sudo test -f /etc/systemd/system/cloudflared.service || fail "cloudflared.service still installed"
+  sudo systemctl disable --now "$UNIT" >/dev/null 2>&1 || true
+  sudo rm -f "/etc/systemd/system/$UNIT.service"
+  sudo systemctl daemon-reload
+  [ "$(systemctl is-active "$UNIT" 2>/dev/null || true)" != active ] || fail "$UNIT still running"
   pass "service stopped and removed"
 fi
 
 # ---------------------------------------------------------------- 2. config
-step "2. Remove the tunnel config and credentials from /etc/cloudflared"
-if ! sudo test -f /etc/cloudflared/config.yml; then
-  skip "no /etc/cloudflared/config.yml"
+step "2. Remove $CONF and the tunnel credentials"
+if ! sudo test -f "$CONF"; then
+  skip "no $CONF"
 elif ! ours_config; then
-  fail "/etc/cloudflared/config.yml is not the $TUNNEL tunnel's; leaving it alone"
+  fail "$CONF is not the $TUNNEL tunnel's; leaving it alone"
 else
-  sudo rm -f /etc/cloudflared/config.yml
+  sudo rm -f "$CONF"
   pass "config removed"
 fi
 if [ -n "$TUNNEL_ID" ] && sudo test -f /etc/cloudflared/"$TUNNEL_ID".json; then
@@ -80,13 +88,13 @@ fi
 # ---------------------------------------------------------------- 3. tunnel
 step "3. Delete the tunnel"
 listed() { local l; l=$(cloudflared tunnel list -o json 2>/dev/null) || return 1; case "$l" in *"\"$TUNNEL_ID\""*) return 0;; *) return 1;; esac; }
-if [ -z "$TUNNEL_ID" ] || ! listed; then
+if [ -z "$TUNNEL_ID" ] || ! test -s "$CERT" || ! listed; then
   skip "tunnel $TUNNEL not on the account"
 else
   # Clears connections left by an unclean stop; delete refuses while any remain.
   cloudflared tunnel cleanup "$TUNNEL" >/dev/null 2>&1 || true
   cloudflared tunnel delete "$TUNNEL" \
-    || fail "delete refused (still connected elsewhere?). Check: cloudflared tunnel info $TUNNEL. Force: cloudflared tunnel delete -f $TUNNEL"
+    || fail "delete refused (still connected elsewhere?). Check: TUNNEL_ORIGIN_CERT=$CERT cloudflared tunnel info $TUNNEL"
   ! listed || fail "tunnel still listed"
   pass "tunnel deleted (this also removed ~/.cloudflared/$TUNNEL_ID.json)"
 fi
@@ -149,7 +157,8 @@ cat <<'DONE'
 The demo is down. Left for you, outside this server:
   - Anthropic Console: delete the demo key (it is the one thing that can still spend money).
   - Cloudflare > Security > WAF > Rate limiting rules: delete "arda-demo ask" (Free has one slot).
-  - Optional: rm ~/.cloudflared/cert.pem to log this server out of Cloudflare.
+  - Optional: rm ~/.cloudflared/arda-demo-cert.pem, the demo's Cloudflare login
+    (any other cloudflared login on this server is a different file).
   - README: set the Live demo line back to "not deployed".
 DONE
 exit 0

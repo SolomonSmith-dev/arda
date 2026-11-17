@@ -1,8 +1,14 @@
 #!/bin/bash
+# Stub: a unit exists when its file is under $H/root/etc/systemd/system.
 echo "systemctl $*" >> "$H/state/calls.log"
-unit="$H/root/etc/systemd/system/cloudflared.service"
+units="$H/root/etc/systemd/system"
 case "$1" in
-  restart|enable) [ -f "$unit" ] || exit 5; echo active > "$H/state/svc-active" ;;
-  is-active) a=$(cat "$H/state/svc-active" 2>/dev/null || echo inactive); echo "$a"; [ "$a" = active ] ;;
+  daemon-reload) exit 0 ;;
+  enable|restart|start)
+    u="${*: -1}"; [ -f "$units/$u.service" ] || exit 5
+    [ "$1" = enable ] && [ "$2" != --now ] && exit 0
+    echo active > "$H/state/svc-active-$u" ;;
+  disable|stop) u="${*: -1}"; rm -f "$H/state/svc-active-$u" ;;
+  is-active) u="$2"; if [ -f "$H/state/svc-active-$u" ]; then echo active; else echo inactive; exit 3; fi ;;
   *) echo "systemctl stub unhandled $*" >&2; exit 1 ;;
 esac

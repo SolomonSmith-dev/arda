@@ -1,40 +1,41 @@
 #!/bin/bash
 # Stub: tunnels live in $H/state/tunnels.json; `tunnel list` prints null when
-# empty, as the real one does.
+# empty, as the real one does. Tunnel commands use the login in
+# TUNNEL_ORIGIN_CERT, like the real flag. With $H/state/zone-suffix present,
+# `route dns` appends that domain to the name, as cloudflared does when the
+# login is for another zone.
 echo "cloudflared $*" >> "$H/state/calls.log"
 [ -f "$H/state/cloudflared-installed" ] || { echo "cloudflared: command not found" >&2; exit 127; }
+cert="${TUNNEL_ORIGIN_CERT:-$HOME/.cloudflared/cert.pem}"
 cfg=""; [ "$1" = --config ] && { cfg="$2"; shift 2; }
 case "$1" in
   --version) echo "cloudflared version 2026.10.0"; exit 0 ;;
-  service)
-    unit="$H/root/etc/systemd/system/cloudflared.service"
-    case "$2" in
-      install)
-        [ -s "$cfg" ] || { echo "no config" >&2; exit 1; }
-        [ -f "$unit" ] && { echo "already installed" >&2; exit 1; }
-        mkdir -p "$(dirname "$unit")"; echo "[Service]" > "$unit"
-        echo enabled > "$H/state/svc-enabled"; echo active > "$H/state/svc-active" ;;
-      uninstall) rm -f "$unit" "$H/state/svc-enabled" "$H/state/svc-active" ;;
-      *) exit 1 ;;
-    esac; exit 0 ;;
   tunnel) shift ;;
   *) echo "stub: unhandled $*" >&2; exit 1 ;;
 esac
 [ "$1" = --config ] && { cfg="$2"; shift 2; }
 T="$H/state/tunnels.json"
 case "$1" in
-  login) mkdir -p "$HOME/.cloudflared"; echo CERT > "$HOME/.cloudflared/cert.pem"; echo "You have successfully logged in." ;;
-  list) [ -s "$HOME/.cloudflared/cert.pem" ] || exit 1; if [ -s "$T" ]; then cat "$T"; else echo null; fi ;;
+  login)
+    [ -s "$HOME/.cloudflared/cert.pem" ] && { echo "You have an existing certificate" >&2; exit 1; }
+    mkdir -p "$HOME/.cloudflared"; echo DEMO-LOGIN > "$HOME/.cloudflared/cert.pem"
+    echo "You have successfully logged in." ;;
+  list) [ -s "$cert" ] || exit 1; if [ -s "$T" ]; then cat "$T"; else echo null; fi ;;
   create)
-    id=$(python3 -c 'import uuid; print(uuid.uuid4())'); mkdir -p "$HOME/.cloudflared"
-    (umask 077; echo '{"TunnelSecret":"x"}' > "$HOME/.cloudflared/$id.json")
+    [ -s "$cert" ] || exit 1
+    id=$(python3 -c 'import uuid; print(uuid.uuid4())')
+    (umask 077; echo '{"TunnelSecret":"x"}' > "$(dirname "$cert")/$id.json")
     echo "[{\"id\":\"$id\",\"name\":\"$2\"}]" > "$T"; echo "Created tunnel $2 with id $id" ;;
-  route) [ "$2" = dns ] || exit 1; touch "$H/state/dns"; echo "Added CNAME" ;;
+  route)
+    [ "$2" = dns ] || exit 1
+    name="${*: -1}"
+    [ -f "$H/state/zone-suffix" ] && name="$name.$(cat "$H/state/zone-suffix")"
+    touch "$H/state/dns"; echo "INF Added CNAME $name which will route to this tunnel" ;;
   ingress) [ -s "$cfg" ] && ! grep -q TUNNEL_ID "$cfg" && echo OK ;;
   cleanup) exit 0 ;;
   delete)
-    [ -f "$H/state/svc-active" ] && { echo "has active connections" >&2; exit 1; }
+    [ -f "$H/state/svc-active-cloudflared-arda-demo" ] && { echo "has active connections" >&2; exit 1; }
     id=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[0]["id"])' "$T")
-    rm -f "$T" "$HOME/.cloudflared/$id.json" ;;
+    rm -f "$T" "$(dirname "$cert")/$id.json" ;;
   *) echo "stub: unhandled tunnel $*" >&2; exit 1 ;;
 esac

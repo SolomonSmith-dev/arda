@@ -32,6 +32,8 @@ PROJECT="arda-demo"
 CONTAINER="arda-demo-api-1"
 LOCAL="http://127.0.0.1:5001"
 PUBLIC="${DEMO_PUBLIC_URL:-https://$HOST}"
+CONF="/etc/cloudflared/arda-demo.yml"
+UNIT="cloudflared-arda-demo"
 GREP=/usr/bin/grep
 # Filled after step 12 so public requests skip the server's own DNS cache, which
 # may hold a negative answer from before the record existed.
@@ -185,15 +187,30 @@ else
 fi
 
 # ---------------------------------------------------------------- 10. login
-step "10. Log in to Cloudflare"
-if test -s ~/.cloudflared/cert.pem; then
-  skip "cert.pem present"
+# The demo has its own Cloudflare login, tunnel config and service, so a server
+# that already runs cloudflared for something else keeps it untouched:
+#   login   ~/.cloudflared/arda-demo-cert.pem   (not cert.pem)
+#   config  /etc/cloudflared/arda-demo.yml      (not config.yml)
+#   service cloudflared-arda-demo               (not cloudflared)
+step "10. Log in to Cloudflare for $HOST"
+CERT="$HOME/.cloudflared/arda-demo-cert.pem"
+if test -s "$CERT"; then
+  skip "demo login present ($CERT)"
 else
-  echo "Open the URL below on your laptop, choose the solomonsmith.dev zone, authorize."
-  cloudflared tunnel login
-  test -s ~/.cloudflared/cert.pem || fail "no ~/.cloudflared/cert.pem"
+  echo "Open the URL below on your laptop and authorize the solomonsmith.dev zone."
+  echo "It is saved as $CERT; any other cloudflared login here is left alone."
+  tmp=$(mktemp -d)
+  # cloudflared writes the login to $HOME/.cloudflared/cert.pem and refuses to
+  # overwrite one, so it logs in under a scratch HOME and the file is moved.
+  HOME="$tmp" cloudflared tunnel login || { rm -rf "$tmp"; fail "Cloudflare login failed"; }
+  mkdir -p "$HOME/.cloudflared"
+  install -m 600 "$tmp/.cloudflared/cert.pem" "$CERT"
+  rm -rf "$tmp"
+  test -s "$CERT" || fail "no $CERT"
   pass "logged in"
 fi
+# Every cloudflared command below uses the demo login.
+export TUNNEL_ORIGIN_CERT="$CERT"
 
 # ---------------------------------------------------------------- 11. tunnel
 step "11. Create the tunnel"
@@ -206,7 +223,7 @@ import json, sys
 ids = [t["id"] for t in (json.load(sys.stdin) or []) if t.get("name") == sys.argv[1]]
 print(ids[0] if ids else "")' "$TUNNEL"
 }
-TUNNEL_ID=$(tunnel_id) || fail "cloudflared tunnel list failed (login expired? rerun after: rm ~/.cloudflared/cert.pem)"
+TUNNEL_ID=$(tunnel_id) || fail "cloudflared tunnel list failed (login expired? rerun after: rm $CERT)"
 if [ -n "$TUNNEL_ID" ]; then
   skip "tunnel $TUNNEL exists ($TUNNEL_ID)"
 else
@@ -215,7 +232,7 @@ else
 fi
 printf '%s' "$TUNNEL_ID" | $GREP -qE '^[0-9a-f-]{36}$' || fail "no tunnel id"
 test -s ~/.cloudflared/"$TUNNEL_ID".json || sudo test -s /etc/cloudflared/"$TUNNEL_ID".json \
-  || fail "credentials for $TUNNEL_ID are not on this server (they are only written where the tunnel was created): cloudflared tunnel delete $TUNNEL, then rerun"
+  || fail "credentials for $TUNNEL_ID are not on this server (they are only written where the tunnel was created): TUNNEL_ORIGIN_CERT=$CERT cloudflared tunnel delete $TUNNEL, then rerun"
 pass "tunnel $TUNNEL_ID"
 
 # ---------------------------------------------------------------- 12. dns
@@ -229,6 +246,12 @@ if ! out=$(cloudflared tunnel route dns ${dns_args[@]+"${dns_args[@]}"} "$TUNNEL
   fail "a DNS record for $HOST exists and is not this tunnel's. If it is left over from an earlier arda-demo tunnel, rerun with OVERWRITE_DNS=1; otherwise remove it in the Cloudflare dashboard"
 fi
 printf '%s\n' "$out" | tail -1
+# A login for another domain makes cloudflared append that domain to the name
+# (arda.solomonsmith.dev.example.com). Catch it here, not two minutes later.
+if has "$out" "$HOST."; then
+  fail "the record went to $HOST.<another domain>: $CERT is a login for a different zone. Delete that record in the Cloudflare dashboard, then: rm $CERT, rerun, and pick solomonsmith.dev at the login"
+fi
+has "$out" "$HOST" || fail "cloudflared did not confirm a route for $HOST"
 if [ -z "${DEMO_PUBLIC_URL:-}" ]; then
   # Ask a public resolver over HTTPS, not this server's cache.
   doh_ip() {
@@ -246,40 +269,54 @@ else
 fi
 
 # ---------------------------------------------------------------- 13. config
-step "13. Install the tunnel config"
+step "13. Install the tunnel config ($CONF)"
 sudo mkdir -p /etc/cloudflared
-# Never take over a cloudflared that serves something else on this host.
-if sudo test -e /etc/cloudflared/config.yml \
-   && ! sudo $GREP -qx "tunnel: $TUNNEL_ID" /etc/cloudflared/config.yml; then
-  fail "/etc/cloudflared/config.yml belongs to another tunnel; not touching it. Move that setup aside or run this tunnel by hand (docs/deploy-demo.md step 13)"
+if sudo test -e "$CONF" && ! sudo $GREP -qx "tunnel: $TUNNEL_ID" "$CONF"; then
+  fail "$CONF belongs to another tunnel; not touching it. Remove it if it is a leftover, then rerun"
 fi
 if test -s ~/.cloudflared/"$TUNNEL_ID".json; then
   sudo /bin/cp -f ~/.cloudflared/"$TUNNEL_ID".json /etc/cloudflared/"$TUNNEL_ID".json
 fi
 sudo chmod 600 /etc/cloudflared/"$TUNNEL_ID".json
 sed "s/TUNNEL_ID/$TUNNEL_ID/g" deploy/demo/cloudflared-config.yml.template \
-  | sudo tee /etc/cloudflared/config.yml >/dev/null
-[ "$(sudo $GREP -c TUNNEL_ID /etc/cloudflared/config.yml || true)" = 0 ] || fail "placeholder left in config"
-val=$(sudo cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate 2>&1) || true
-has "$val" OK || { printf '%s\n' "$val" >&2; fail "cloudflared rejected /etc/cloudflared/config.yml"; }
+  | sudo tee "$CONF" >/dev/null
+[ "$(sudo $GREP -c TUNNEL_ID "$CONF" || true)" = 0 ] || fail "placeholder left in config"
+val=$(sudo cloudflared tunnel --config "$CONF" ingress validate 2>&1) || true
+has "$val" OK || { printf '%s\n' "$val" >&2; fail "cloudflared rejected $CONF"; }
 pass "config valid"
 
 # ---------------------------------------------------------------- 14. service
-step "14. Run the tunnel as a service"
-if sudo test -f /etc/systemd/system/cloudflared.service; then
-  sudo systemctl restart cloudflared
-else
-  sudo cloudflared --config /etc/cloudflared/config.yml service install
+step "14. Run the tunnel as the $UNIT service"
+# Its own unit, not `cloudflared service install`, which manages the single
+# cloudflared.service another tunnel on this host may already use.
+cf_bin=$(command -v cloudflared)
+unit_body="[Unit]
+Description=Cloudflare Tunnel for the ARDA public demo ($TUNNEL)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=$cf_bin --no-autoupdate --config $CONF tunnel run
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target"
+if [ "$(sudo cat "/etc/systemd/system/$UNIT.service" 2>/dev/null || true)" != "$unit_body" ]; then
+  printf '%s\n' "$unit_body" | sudo tee "/etc/systemd/system/$UNIT.service" >/dev/null
+  sudo systemctl daemon-reload
 fi
-sudo systemctl enable --now cloudflared
+sudo systemctl enable "$UNIT" >/dev/null 2>&1 || fail "could not enable $UNIT"
+sudo systemctl restart "$UNIT"
 reg=0
 for _ in $(seq 1 20); do
-  j=$(sudo journalctl -u cloudflared --since '3 min ago' --no-pager 2>/dev/null || true)
+  j=$(sudo journalctl -u "$UNIT" --since '3 min ago' --no-pager 2>/dev/null || true)
   if has "$j" 'Registered tunnel connection'; then reg=1; break; fi
   sleep 3
 done
-[ "$reg" = 1 ] || fail "no registered tunnel connection in the journal: sudo journalctl -u cloudflared -n 50"
-[ "$(systemctl is-active cloudflared)" = active ] || fail "cloudflared not active"
+[ "$reg" = 1 ] || fail "no registered tunnel connection in the journal: sudo journalctl -u $UNIT -n 50"
+[ "$(systemctl is-active "$UNIT")" = active ] || fail "$UNIT not active"
 pass "tunnel connected"
 
 # ---------------------------------------------------------------- 15. public

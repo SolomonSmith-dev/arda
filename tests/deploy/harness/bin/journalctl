@@ -1,3 +1,5 @@
 #!/bin/bash
-[ "$(cat "$H/state/svc-active" 2>/dev/null)" = active ] && echo "cloudflared[1]: INF Registered tunnel connection connIndex=0"
+# Stub: `journalctl -u UNIT ...` shows a registered connection while UNIT runs.
+u=""; while [ $# -gt 0 ]; do [ "$1" = -u ] && u="$2"; shift; done
+[ -f "$H/state/svc-active-$u" ] && echo "cloudflared[1]: INF Registered tunnel connection connIndex=0"
 exit 0
