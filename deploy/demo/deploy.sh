@@ -355,6 +355,9 @@ for _ in $(seq 1 3); do
 done
 [ "$edge" = 1 ] || fail "no edge block after 45 fast requests: check the rule is deployed and matches /demo/ask"
 pass "Cloudflare blocks bursts at the edge"
+# The check above leaves this address blocked at the edge for 10 s. Wait it
+# out, so a rerun straight after this one does not hit the block in step 17.
+sleep 11
 
 restart_api
 printf '\nAll steps passed. https://%s is live.\n' "$HOST"
