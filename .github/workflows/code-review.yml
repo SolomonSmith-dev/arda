@@ -41,6 +41,12 @@ jobs:
           jwt=$(curl -fsS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
                   "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r .value)
           echo "::add-mask::$jwt"
+          # The claims the federation rule matches on, for diagnosing a 401.
+          # Run metadata only; the signed token itself stays masked.
+          payload=$(printf '%s' "$jwt" | cut -d. -f2 | tr '_-' '/+')
+          while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+          printf '%s' "$payload" | base64 -d \
+            | jq -c '{sub, aud, event_name, repository, repository_owner_id, workflow_ref, ref}'
           # 2. Exchange it for an Anthropic access token (jwt-bearer grant).
           body=$(jq -n --arg a "$jwt" --arg r "$RULE_ID" --arg o "$ORG_ID" --arg w "$WORKSPACE_ID" \
             '{grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: $a,
