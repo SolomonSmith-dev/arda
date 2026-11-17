@@ -338,8 +338,10 @@ On macOS use `sed -i ''` instead of `sed -i`.
 | Recent counts (no content) | `docker logs --since 1h arda-demo-api-1 2>&1 \| /usr/bin/grep demo_request` |
 | Update | `cd ~/arda-demo && git pull && docker compose -p arda-demo -f docker-compose.yml -f deploy/demo/docker-compose.demo.yml up -d --build api` |
 | Stop taking traffic | `sudo systemctl stop cloudflared` |
-| Tear down the app | `docker compose -p arda-demo down` |
-| Revoke access fully | delete the key in the Anthropic Console, then `cloudflared tunnel delete arda-demo` |
+| Tear down the app only | `docker compose -p arda-demo down` |
+| Health check from anywhere (no tokens) | `bash deploy/demo/check.sh` |
+| Take the whole demo down | `bash ~/arda-demo/deploy/demo/teardown.sh`: stops and removes the tunnel service, its config and credentials, deletes the tunnel, waits while you delete the DNS record (cloudflared cannot, and deleting a tunnel leaves its CNAME behind), removes the container and image, offers to delete `.env.demo`. Refuses to touch a cloudflared setup for another tunnel. Reruns resume. |
+| Revoke access fully | run `teardown.sh`, then delete the key in the Anthropic Console and the rate-limit rule in Cloudflare |
 
 Notes
 - The rate limiter and token budget are in memory. A container restart resets both. The provider spend limit (step 5) is the backstop.
