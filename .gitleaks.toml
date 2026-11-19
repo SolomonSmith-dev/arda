@@ -1,0 +1,25 @@
+# Gitleaks config for arda.
+#
+# Why this exists: the numenor pre-push fence scans every commit in the push
+# range, so merging origin/main into a feature branch re-flags findings that are
+# already public on main. On 2026-11-19, merging main into
+# fix/telegram-allowlist-fail-closed was refused for a finding that had shipped
+# in PR #134.
+#
+# The finding is a false positive: the value is an Anthropic API beta header
+# name, "oidc-federation-2026-04-01", read as a credential by the generic-api-key
+# rule because of its shape. The allowlist names that exact value only. It does
+# not exempt a file, a rule or a path, so a real secret anywhere, including the
+# same line and the same file, is still caught.
+
+title = "arda"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Anthropic beta header name, not a credential"
+regexTarget = "match"
+regexes = [
+  '''oidc-federation-2026-04-01''',
+]
