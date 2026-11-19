@@ -80,7 +80,8 @@ class Settings(BaseSettings):
     tmdb_api_key: str = ""
 
     # Telegram (Gwaihir bot). Comma-separated allowlist of chat IDs;
-    # any inbound update from a chat not in this list is silently dropped.
+    # any inbound update from a chat not in this list is silently dropped,
+    # and an empty list drops every update (fail closed).
     telegram_bot_token: str = ""
     telegram_allowed_chat_ids: str = ""
 
