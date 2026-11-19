@@ -1,0 +1,11 @@
+#!/bin/bash
+# Stub only for the cloudflared keyring and DNS-over-HTTPS; everything else is real curl.
+for a in "$@"; do
+  case "$a" in
+    https://pkg.cloudflare.com/*) printf 'KEY'; exit 0 ;;
+    https://cloudflare-dns.com/*)
+      if [ -f "$H/state/dns" ]; then echo '{"Status":0,"Answer":[{"type":1,"data":"104.21.0.1"}]}'
+      else echo '{"Status":3}'; fi; exit 0 ;;
+  esac
+done
+exec /usr/bin/curl "$@"

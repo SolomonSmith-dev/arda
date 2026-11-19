@@ -38,3 +38,14 @@ jobs:
       # Steps: ruff, mypy (agents + core), pytest, mock evals, README results check.
       - name: Gate
         run: scripts/check.sh
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Every tracked shell script, warnings and above. Info-level notes
+      # (e.g. SC2015 on deliberate `a && b || fail` checks) don't fail CI.
+      - name: shellcheck
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
+          git ls-files -z '*.sh' 'tests/deploy/harness/bin/*' | xargs -0 shellcheck -S warning

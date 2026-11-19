@@ -1,0 +1,21 @@
+#!/bin/bash
+# Stub: compose up/restart/down drive the real demo app via app-restart.sh.
+echo "docker $*" >> "$H/state/calls.log"
+up() { /usr/bin/curl -sf 127.0.0.1:5001/health >/dev/null; }
+if [ "$1" = compose ]; then
+  shift; [ "$*" = "version --short" ] && { echo 2.29.1; exit 0; }
+  while [ $# -gt 0 ]; do case "$1" in -p|-f) shift 2;; *) break;; esac; done
+  case "$1" in
+    up) up || "$HARNESS_DIR/app-restart.sh" || exit 1; touch "$H/state/container" "$H/state/image" ;;
+    ps) [ -f "$H/state/container" ] && echo 3f2a1b0c9d8e; exit 0 ;;
+    down) [ -f "$H/state/app.pid" ] && kill "$(cat "$H/state/app.pid")" 2>/dev/null; rm -f "$H/state/container" ;;
+    restart) "$HARNESS_DIR/app-restart.sh" || exit 1 ;;
+    *) echo "docker stub: unhandled compose $*" >&2; exit 1 ;;
+  esac; exit 0
+fi
+case "$1" in
+  inspect) up && echo healthy || echo starting ;;
+  image) case "$2" in inspect) [ -f "$H/state/image" ];; rm) rm -f "$H/state/image";; esac ;;
+  logs) cat "$H/state/app.log" ;;
+  *) echo "docker stub: unhandled $*" >&2; exit 1 ;;
+esac
