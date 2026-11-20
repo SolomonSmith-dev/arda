@@ -18,10 +18,10 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         with:
           enable-cache: true
 
@@ -42,10 +42,18 @@ jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       # Every tracked shell script, warnings and above. Info-level notes
       # (e.g. SC2015 on deliberate `a && b || fail` checks) don't fail CI.
       - name: shellcheck
         run: |
           command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
           git ls-files -z '*.sh' 'tests/deploy/harness/bin/*' | xargs -0 shellcheck -S warning
+
+  pins:
+    name: Workflow pins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Test workflow pins
+        run: bash scripts/test-workflow-pins.sh
