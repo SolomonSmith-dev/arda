@@ -151,7 +151,8 @@ def _handle_update(
         return
 
     allowlist = settings.telegram_chat_allowlist
-    if allowlist and chat_id not in allowlist:
+    # Fail closed: an empty allowlist rejects every chat.
+    if chat_id not in allowlist:
         log.warning(
             "telegram_chat_blocked",
             chat_id=chat_id,

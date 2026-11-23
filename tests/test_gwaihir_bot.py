@@ -113,32 +113,20 @@ def test_handle_update_drops_chat_outside_allowlist(monkeypatch):
     telegram_client.post.assert_not_called()
 
 
-def test_handle_update_allows_empty_allowlist_through(monkeypatch):
-    """Empty allowlist means open mode — used during dev only."""
+def test_handle_update_empty_allowlist_rejects_every_chat(monkeypatch):
+    """Empty allowlist fails closed: no chat is served, nothing is sent."""
     monkeypatch.setattr(
         "agents.gwaihir.bot.settings.telegram_allowed_chat_ids", ""
     )
+    api_client = MagicMock()
+    telegram_client = MagicMock()
 
-    api_body = {"status": "completed", "result": {"reply": "pong"}}
-    captured: dict = {}
-    api_client = _api_client_capturing(captured, api_body)
+    for chat_id in (1, 42, 123456789, -100123):
+        update = {"update_id": 1, "message": {"chat": {"id": chat_id}, "text": "ping"}}
+        _handle_update(api_client, telegram_client, "tok", update)
 
-    sent: dict = {}
-
-    def telegram_handler(request: httpx.Request) -> httpx.Response:
-        sent["url"] = str(request.url)
-        sent["body"] = request.read().decode()
-        return httpx.Response(200, json={"ok": True, "result": {"message_id": 1}})
-
-    telegram_client = httpx.Client(transport=httpx.MockTransport(telegram_handler))
-
-    update = {"update_id": 1, "message": {"chat": {"id": 42}, "text": "ping"}}
-    _handle_update(api_client, telegram_client, "tok", update)
-
-    assert captured["path"] == "/execute/wait"
-    assert "ping" in captured["body"]
-    assert "pong" in sent["body"]
-    assert "42" in sent["body"]
+    api_client.post.assert_not_called()
+    telegram_client.post.assert_not_called()
 
 
 def test_handle_update_allowlisted_chat_forwards_to_api(monkeypatch):
