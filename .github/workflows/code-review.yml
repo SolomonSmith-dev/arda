@@ -1,22 +1,87 @@
 name: AI code review
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  # Paused 2026-11-17: this job bills the paid Anthropic API (ANTHROPIC_API_KEY).
+  # Solomon turned API spend off. Run by hand only; restore the pull_request
+  # trigger to re-enable.
+  workflow_dispatch:
 permissions:
   contents: read
-  pull-requests: write
 concurrency:
   group: code-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
   review:
+    # Fork PRs never get an OIDC token on pull_request, and Dependabot PRs get
+    # neither secrets nor a token the federation rule accepts. Lint and tests
+    # in ci.yml still gate both.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      # Lets this job (only) ask GitHub for a short-lived OIDC token, which is
+      # exchanged for an Anthropic access token (workload identity
+      # federation). No API key is stored in this repository.
+      id-token: write
     steps:
+      - name: Get a short-lived Anthropic token
+        id: anthropic
+        env:
+          # Repository variables (Settings > Secrets and variables > Actions >
+          # Variables). IDs, not secrets. See docs/ci-anthropic-auth.md.
+          RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ORG_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          WORKSPACE_ID: ${{ vars.ANTHROPIC_WORKSPACE_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$RULE_ID" ] || [ -z "$ORG_ID" ]; then
+            echo "::error::Set repository variables ANTHROPIC_FEDERATION_RULE_ID and ANTHROPIC_ORGANIZATION_ID (docs/ci-anthropic-auth.md)."
+            exit 1
+          fi
+          # 1. GitHub's OIDC token for this job, audience api.anthropic.com.
+          jwt=$(curl -fsS --max-time 30 -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+                  "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r .value)
+          echo "::add-mask::$jwt"
+          # The claims the federation rule matches on, for diagnosing a 401.
+          # Run metadata only; the signed token itself stays masked.
+          # Never fatal: the exchange below does not depend on it.
+          {
+            payload=$(printf '%s' "$jwt" | cut -d. -f2 | tr '_-' '/+')
+            while [ $(( ${#payload} % 4 )) -ne 0 ]; do payload="$payload="; done
+            printf '%s' "$payload" | base64 -d 2>/dev/null \
+              | jq -c '{sub, aud, event_name, repository, repository_owner_id, workflow_ref, ref}'
+          } || echo "::notice::Could not decode the OIDC claims for diagnostics"
+          # 2. Exchange it for an Anthropic access token (jwt-bearer grant).
+          body=$(jq -n --arg a "$jwt" --arg r "$RULE_ID" --arg o "$ORG_ID" --arg w "$WORKSPACE_ID" \
+            '{grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: $a,
+              federation_rule_id: $r, organization_id: $o}
+             + (if $w == "" then {} else {workspace_id: $w} end)')
+          resp=$(curl -sS --max-time 30 -w '\n%{http_code}' https://api.anthropic.com/v1/oauth/token \
+                   -H 'content-type: application/json' \
+                   -H 'anthropic-beta: oauth-2025-04-20,oidc-federation-2026-04-01' \
+                   -d "$body")
+          code=${resp##*$'\n'}; json=${resp%$'\n'*}
+          token=$(printf '%s' "$json" | jq -r '.access_token // empty')
+          if [ "$code" != 200 ] || [ -z "$token" ]; then
+            # Error bodies carry no credentials. Denials are an opaque 401;
+            # the Console's authentication history has the reason.
+            echo "::error::Token exchange failed with HTTP $code: $(printf '%s' "$json" | jq -c '.error // .' 2>/dev/null)"
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+          echo "Anthropic token valid for $(printf '%s' "$json" | jq -r .expires_in) s"
+
       - uses: alibaba/open-code-review@357c3f09a264563ab64d8f4fc3b25b186cd3c4a4 # main 2026-10-10
         with:
           llm_url: https://api.anthropic.com
-          llm_auth_token: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Sent as Authorization: Bearer (the action's default for this
+          # protocol), which is what federated tokens need, plus the OAuth beta.
+          llm_auth_token: ${{ steps.anthropic.outputs.token }}
+          llm_extra_headers: anthropic-beta=oauth-2025-04-20
           llm_model: claude-haiku-5-5
           llm_use_anthropic: 'true'
           sticky_summary: 'true'
