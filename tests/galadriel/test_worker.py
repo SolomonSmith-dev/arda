@@ -227,3 +227,75 @@ def test_result_errors_are_recorded_not_stamped_ok(r, monkeypatch):
     assert result_job.last_status != "ok", result_job.last_status
     assert result_job.consecutive_errors == 1
     assert "LETTERBOXD_USERNAME" in (result_job.last_error or "")
+
+
+# ----- Galadriel redaction: bot token must not reach last_error or logs ---
+
+FAKE_BOT_TOKEN = "123456789:FAKE-not-a-real-token-AAAAAAAAAAAAAAAAAAA"
+
+
+def _telegram_400_client() -> httpx.Client:
+    transport = httpx.MockTransport(
+        lambda req: httpx.Response(400, json={"ok": False, "description": "chat not found"}),
+    )
+    return httpx.Client(transport=transport)
+
+
+@pytest.fixture
+def failing_telegram(monkeypatch):
+    """Route announce() through the real send_message with a 400 response."""
+    from agents.gwaihir import notifier
+
+    real_send = notifier.send_message
+    monkeypatch.setattr(notifier.settings, "telegram_bot_token", FAKE_BOT_TOKEN)
+    monkeypatch.setattr(
+        notifier,
+        "send_message",
+        lambda chat_id, text, **kw: real_send(chat_id, text, client=_telegram_400_client()),
+    )
+
+
+def test_delivery_failure_keeps_bot_token_out_of_last_error_and_logs(
+    r, failing_telegram, caplog
+):
+    import logging
+
+    from structlog.testing import capture_logs
+
+    job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
+    client = _client_returning({"status": "completed", "result": {"reply": "ok"}})
+
+    with caplog.at_level(logging.INFO), capture_logs() as events:
+        out = run_one(client, r, job)
+
+    assert FAKE_BOT_TOKEN not in repr(events)
+    assert FAKE_BOT_TOKEN not in caplog.text
+    assert out.last_error, "delivery failure must be recorded"
+    assert FAKE_BOT_TOKEN not in out.last_error
+    assert FAKE_BOT_TOKEN not in (read_job(r, "job-1").last_error or "")
+
+
+def test_delivery_failure_after_clean_run_is_not_recorded_ok(r, failing_telegram):
+    """Review finding 1: last_status must reflect a failed send."""
+    job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
+    client = _client_returning({"status": "completed", "result": {"reply": "ok"}})
+
+    out = run_one(client, r, job)
+
+    assert out.last_status == "error"
+    assert out.consecutive_errors == 1
+
+
+def test_telegram_not_configured_stays_non_fatal(r, monkeypatch):
+    """Review finding 2: unconfigured Telegram is a warning, not a job failure."""
+    from agents.gwaihir import notifier
+
+    monkeypatch.setattr(notifier.settings, "telegram_bot_token", "")
+    job = _cron_job(delivery=JobDelivery(mode="telegram", to="42"))
+    client = _client_returning({"status": "completed", "result": {"reply": "ok"}})
+
+    out = run_one(client, r, job)
+
+    assert out.last_status == "ok"
+    assert out.last_error is None
+    assert out.consecutive_errors == 0
