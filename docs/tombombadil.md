@@ -39,7 +39,7 @@ only required if you want the bot to *listen on Discord*.
    `chmod 600`):
 
    ```bash
-   cd ~/Code/arda-stack/arda
+   cd /path/to/arda
    sed -i "s|^DISCORD_TOKEN=.*|DISCORD_TOKEN=<paste-the-token>|" .env
    ```
 
@@ -54,7 +54,7 @@ only required if you want the bot to *listen on Discord*.
 ## Bring the bot up
 
 ```bash
-cd ~/Code/arda-stack/arda
+cd /path/to/arda
 docker compose --profile discord up -d tombombadil
 
 # Watch the logs until you see bot_ready

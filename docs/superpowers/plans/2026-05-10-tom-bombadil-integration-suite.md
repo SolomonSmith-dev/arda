@@ -58,7 +58,7 @@
 - [ ] **Step 1: Create package marker**
 
 ```bash
-touch /Users/solomonsmith/Projects/arda/tests/integration/__init__.py
+touch /path/to/arda/tests/integration/__init__.py
 ```
 
 - [ ] **Step 2: Create discord.py doubles**
@@ -353,8 +353,8 @@ def test_harness_imports_cleanly(identity_yaml, fake_redis, fake_bot_user, solom
 - [ ] **Step 5: Run the smoke test**
 
 ```bash
-cd /Users/solomonsmith/Projects/arda
-source /Users/solomonsmith/Projects/Agents/.venv/bin/activate
+cd /path/to/arda
+source /path/to/Agents/.venv/bin/activate
 pytest tests/integration/ -v 2>&1 | tail -10
 ```
 
@@ -363,7 +363,7 @@ Expected: 1 passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/solomonsmith/Projects/arda
+cd /path/to/arda
 git checkout -b claude/tom-integration-suite
 git add tests/integration/
 git commit -m "feat(tests): bootstrap Tom Bombadil integration harness

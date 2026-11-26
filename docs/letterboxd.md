@@ -23,11 +23,11 @@ Files we read (any missing are skipped silently):
 Letterboxd's `diary.csv`, `watchlist.csv`, `lists/`, `likes/`, and
 `comments.csv` are ignored for now. Add them to the loader if you want them.
 
-## Bring-up on home-server
+## Bring-up on `<server-host>`
 
 ```bash
 # 1. Unzip your export (you sent the zip via Tailscale already)
-cd ~/Code/arda-stack/arda
+cd /path/to/arda
 mkdir -p data/letterboxd
 unzip ~/letterboxd-export-*.zip -d data/letterboxd/
 
@@ -43,7 +43,7 @@ docker compose logs api | grep -i letterboxd
 #         letterboxd_merged         films=N  people=N
 ```
 
-`data/` is gitignored — your CSVs stay on home-server only, never pushed.
+`data/` is gitignored — your CSVs stay on `<server-host>` only, never pushed.
 
 ## Verify Tom Bombadil sees it
 

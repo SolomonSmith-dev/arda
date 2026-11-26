@@ -8,7 +8,7 @@
 
 ADR 0002 row 13 said `earendil/tests/` would be moved to `tests/earendil/` and have imports updated. Reading the three test files during execution shows they are not import-driven unit tests:
 
-- `test_api.py`, `test_queue.py`, `test_e2e.py` all hit `http://100.112.3.116:5000` (Mac Mini Tailscale IP) via `requests.post/get`. They are integration tests against a live, deployed FastAPI server.
+- `test_api.py`, `test_queue.py`, `test_e2e.py` all hit `http://<tailnet-ip>:5000` (Mac Mini Tailscale IP) via `requests.post/get`. They are integration tests against a live, deployed FastAPI server.
 - They share a hard-coded `BASE_URL` and `API_KEY`.
 - They never `import` Earendil code -- they only exercise it through HTTP.
 

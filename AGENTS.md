@@ -44,7 +44,7 @@ worker + Redis) is already provisioned on the VM. The startup update script runs
 
 ### Deploy host reality (verified 2026-08-27)
 
-`home-server` (`100.112.3.116`, `/home/solomon/Code/arda-stack/arda`) **is now
+`<server-host>` (`<tailnet-ip>`, `/path/to/arda`) **is now
 on `main`** and rebuilt. It had been on `claude/pr-6-hardening` for two months;
 that branch is preserved at `origin/claude/pr-6-hardening` and locally as
 `prod-backup-20260827`. Nothing unique was lost -- every prod-only commit was
