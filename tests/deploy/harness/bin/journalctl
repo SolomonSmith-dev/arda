@@ -1,0 +1,3 @@
+#!/bin/bash
+[ "$(cat "$H/state/svc-active" 2>/dev/null)" = active ] && echo "cloudflared[1]: INF Registered tunnel connection connIndex=0"
+exit 0

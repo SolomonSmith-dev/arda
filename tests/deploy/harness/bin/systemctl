@@ -1,0 +1,8 @@
+#!/bin/bash
+echo "systemctl $*" >> "$H/state/calls.log"
+unit="$H/root/etc/systemd/system/cloudflared.service"
+case "$1" in
+  restart|enable) [ -f "$unit" ] || exit 5; echo active > "$H/state/svc-active" ;;
+  is-active) a=$(cat "$H/state/svc-active" 2>/dev/null || echo inactive); echo "$a"; [ "$a" = active ] ;;
+  *) echo "systemctl stub unhandled $*" >&2; exit 1 ;;
+esac
