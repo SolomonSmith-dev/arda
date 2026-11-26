@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 import structlog
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from agents.earendil import agent as earendil_agent
@@ -57,16 +56,22 @@ def _fill(path: str) -> str:
     return out
 
 
+def _operations(app) -> set[tuple[str, str]]:
+    # (METHOD, path) from the OpenAPI schema. FastAPI >= 0.16x wraps included routers in a
+    # private _IncludedRouter, so app.routes no longer lists the APIRoutes. No route here
+    # sets include_in_schema=False.
+    return {(m.upper(), p) for p, ops in app.openapi()["paths"].items() for m in ops}
+
+
 def test_every_non_allowlisted_route_is_refused(client):
     headers = {"x-api-key": settings.arda_api_key}  # even the operator's key is refused
     checked = 0
-    for route in client.app.routes:
-        if not isinstance(route, APIRoute) or route.path in ALLOWED_PATHS:
+    for method, path in sorted(_operations(client.app)):
+        if path in ALLOWED_PATHS:
             continue
-        for method in route.methods - {"HEAD", "OPTIONS"}:
-            r = client.request(method, _fill(route.path), headers=headers, json={})
-            assert r.status_code == 403, (method, route.path, r.status_code)
-            checked += 1
+        r = client.request(method, _fill(path), headers=headers, json={})
+        assert r.status_code == 403, (method, path, r.status_code)
+        checked += 1
     assert checked >= 15  # execute, execute/wait, task, agents/*, cron, memory, query, ...
 
 
@@ -204,7 +209,7 @@ def test_page_and_status(client):
 def test_default_app_is_unchanged_without_demo_mode(monkeypatch):
     monkeypatch.setattr(settings, "demo_mode", False)
     app = api_main.create_app()
-    paths = {r.path for r in app.routes if isinstance(r, APIRoute)}
+    paths = {p for _, p in _operations(app)}
     assert "/execute" in paths and "/" not in paths and "/demo/ask" not in paths
 
 

@@ -62,7 +62,7 @@ dependencies = [
     "numpy<2",
 
     # MCP
-    "mcp[cli]>=1.0",
+    "mcp[cli]>=1.30,<2",
 
     # Discord (Tom Bombadil)
     "discord.py>=2.4",
