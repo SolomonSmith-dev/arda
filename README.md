@@ -12,7 +12,7 @@ One LangGraph `StateGraph` (Sauron) classifies each request through native `tool
 
 ## Evidence
 
-- **Tests:** 582 collected, 577 passed, 5 skipped (the skips need a real `ANTHROPIC_API_KEY`). `uv run pytest tests/ -q`, run 2026-11-03 on this commit, 29s.
+- **Tests:** 621 collected, 608 passed, 13 skipped (8 deploy-script harness tests behind `RUN_DEPLOY_HARNESS=1`, 4 live-smoke tests that need a real `ANTHROPIC_API_KEY`, 1 SDK-parity check). `uv run pytest tests/ -q`, run 2026-11-17 on main at b9efebe, 21s.
 - **CI:** `.github/workflows/ci.yml` runs `scripts/check.sh` on every push to `main` and every PR: ruff, mypy on `agents` and `core`, pytest, mock evals twice (fails if the runs differ or drift from `evals/results/baseline-mock.json`), and a check that the Results table below matches the committed eval JSON.
 - **Evals:** routing accuracy 75.9% (n=54), prompt-injection block rate 25.0% (n=16), retrieval recall@5 81.6%, MRR@10 0.725. Source: [`evals/results/2026-10-05-mock.json`](evals/results/2026-10-05-mock.json). Mock column only; the live run against Claude has not been committed yet. Gold sets: `evals/routing/gold.jsonl` (70 rows), `evals/retrieval/queries.jsonl` (38 queries).
 - **Demo-mode safety:** 17 tests in [`tests/test_demo_mode.py`](tests/test_demo_mode.py), including a sweep that reads every operation from the OpenAPI schema and asserts each non-allowlisted route returns a refusal.
@@ -27,7 +27,7 @@ Clean clone, no API keys, no Docker. Needs [uv](https://docs.astral.sh/uv/) and 
 git clone https://github.com/SolomonSmith-dev/arda && cd arda
 uv sync --extra dev                # slim install: no torch, no pymilvus
 cp .env.example .env               # ships with USE_MOCK_LLM=true
-uv run pytest tests/ -q            # 577 passed, 5 skipped, no network
+uv run pytest tests/ -q            # 608 passed, 13 skipped, no network
 scripts/check.sh                   # the CI gate, same script CI runs
 ```
 
