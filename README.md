@@ -6,6 +6,8 @@
 
 **I built ARDA to put a Claude orchestrator in front of a shell and find out, with numbers, where the routing fails before a command does.**
 
+**Live demo:** not deployed yet ([runbook](docs/deploy-demo.md))
+
 One LangGraph `StateGraph` (Sauron) classifies each request through native `tool_use` and dispatches it to a shell executor, a RAG retriever or a Discord film-club specialist, behind one FastAPI API and one MCP server. The hard part is not the routing, it is the shell-bound path: an injected prompt that reaches the executor runs a command. So the repo ships a labelled eval set with 16 injection cases, a committed baseline that shows the offline router leaking 12 of them, and a demo mode that closes the gap structurally: shell refused at the router, inside the agent and in the worker, with every route swept against the OpenAPI schema. Every LLM has a deterministic mock, so the whole suite runs with zero API keys.
 
 ## Evidence
@@ -44,7 +46,7 @@ uv run uvicorn api.main:app --port 5000      # bare uvicorn binds 8000; the exam
 uv run python -m agents.earendil.worker      # drains the shell task queue
 ```
 
-Docker: `cp .env.example .env`, set `ARDA_API_KEY` (and `USE_MOCK_LLM=false` plus `ANTHROPIC_API_KEY` for real calls), then `docker compose up -d`. On macOS AirPlay Receiver owns port 5000; use `ARDA_PORT=5050 docker compose up -d` or turn it off. Deployment runbooks: [`docs/cutover.md`](docs/cutover.md) (production), [`docs/deploy-demo.md`](docs/deploy-demo.md) (public demo behind a Cloudflare Tunnel; not deployed at the time of writing).
+Docker: `cp .env.example .env`, set `ARDA_API_KEY` (and `USE_MOCK_LLM=false` plus `ANTHROPIC_API_KEY` for real calls), then `docker compose up -d`. On macOS AirPlay Receiver owns port 5000; use `ARDA_PORT=5050 docker compose up -d` or turn it off. Deployment runbooks: [`docs/cutover.md`](docs/cutover.md) (production), [`docs/deploy-demo.md`](docs/deploy-demo.md) (public demo behind a Cloudflare Tunnel).
 
 ![ARDA demo page in mock mode: a question, the retrieved answer, and a trace of specialist, tool calls, latency and tokens](docs/img/demo-page.png)
 

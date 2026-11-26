@@ -1,0 +1,4 @@
+#!/bin/bash
+echo "apt-get $*" >> "$H/state/calls.log"
+[ "$1" = install ] && touch "$H/state/cloudflared-installed"
+exit 0
