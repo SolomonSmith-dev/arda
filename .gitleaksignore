@@ -1,0 +1,5 @@
+# Confirmed false positives (test fixtures / header values / public IDs), reviewed 2026-11-20.
+35cfa8564c5c439bcc0817623dbb8c990e711301:tests/integration/conftest.py:discord-client-id:18
+38a122d06416befc55e230a7b16a4d0d5027fe27:.github/workflows/code-review.yml:generic-api-key:51
+8aa0e460e0c54b007bbce3ea1ce61d74bd3d5c49:.github/workflows/code-review.yml:generic-api-key:62
+c430e32163661b2c9015c3dcdb2bc39b6eab4d9e:docs/superpowers/plans/2026-05-10-tom-bombadil-integration-suite.md:discord-client-id:199
